@@ -42,7 +42,6 @@ func newYggClient(url *url.URL, tls *tls.Config) *yggClient.Client {
 	host := url.Host
 	basePath := url.Path
 	schemes := []string{url.Scheme}
-	transport := rtclient.New(host, basePath, schemes)
 
 	httpTransport := http.Transport{
 		ResponseHeaderTimeout: 10 * time.Second,
@@ -50,8 +49,10 @@ func newYggClient(url *url.URL, tls *tls.Config) *yggClient.Client {
 
 	if tls != nil {
 		httpTransport.TLSClientConfig = tls
+		schemes = []string{"https"}
 	}
 
+	transport := rtclient.New(host, basePath, schemes)
 	transport.Transport = &httpTransport
 
 	return yggdrasil.New(transport, strfmt.Default, nil)
