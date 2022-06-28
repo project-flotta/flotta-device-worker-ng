@@ -90,7 +90,7 @@ func (c *Manager) SetCertificate(cert, privateKey []byte) error {
 	return nil
 }
 
-func (c *Manager) TLSConfig() (tls.Config, error) {
+func (c *Manager) TLSConfig() (*tls.Config, error) {
 	config := tls.Config{
 		RootCAs: c.rootCA,
 	}
@@ -103,12 +103,12 @@ func (c *Manager) TLSConfig() (tls.Config, error) {
 	//
 	cert, err := tls.X509KeyPair(certPEM.Bytes(), c.marshalKeyToPem(c.privateKey).Bytes())
 	if err != nil {
-		return tls.Config{}, fmt.Errorf("cannot create x509 key pair: %w", err)
+		return nil, fmt.Errorf("cannot create x509 key pair: %w", err)
 	}
 
 	config.Certificates = []tls.Certificate{cert}
 
-	return config, nil
+	return &config, nil
 }
 
 func (c *Manager) GenerateCSR(deviceID string) ([]byte, []byte, error) {

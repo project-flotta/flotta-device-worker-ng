@@ -15,7 +15,7 @@ import (
 
 //go:generate mockgen -package=edge -destination=mock_client.go --build_flags=--mod=mod . Client
 type Client interface {
-	UpdateTLS(newTlS tls.Config)
+	UpdateTLS(newTlS *tls.Config)
 
 	// Enrol sends the enrolment information.
 	Enrol(ctx context.Context, info entities.EnrolementInfo) error
@@ -104,7 +104,6 @@ func (c *Controller) run() {
 				break
 			}
 
-			// TODO save the new certs on the disk
 			c.certManager.SetCertificate(signedCSR, key)
 
 			if err := c.certManager.WriteCertificate(config.GetCertificateFile(), config.GetPrivateKey()); err != nil {

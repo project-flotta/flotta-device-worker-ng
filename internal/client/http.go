@@ -29,7 +29,7 @@ type HttpClient struct {
 	yggClient *yggClient.Client
 }
 
-func New(server string, tls tls.Config) (*HttpClient, error) {
+func New(server string, tls *tls.Config) (*HttpClient, error) {
 	url, err := url.Parse(server)
 	if err != nil {
 		return nil, fmt.Errorf("Server address error: %s", err)
@@ -38,20 +38,26 @@ func New(server string, tls tls.Config) (*HttpClient, error) {
 	return &HttpClient{yggClient: newYggClient(url, tls), url: url}, nil
 }
 
-func newYggClient(url *url.URL, tls tls.Config) *yggClient.Client {
+func newYggClient(url *url.URL, tls *tls.Config) *yggClient.Client {
 	host := url.Host
 	basePath := url.Path
 	schemes := []string{url.Scheme}
 	transport := rtclient.New(host, basePath, schemes)
-	transport.Transport = &http.Transport{
-		TLSClientConfig:       &tls,
+
+	httpTransport := http.Transport{
 		ResponseHeaderTimeout: 10 * time.Second,
 	}
+
+	if tls != nil {
+		httpTransport.TLSClientConfig = tls
+	}
+
+	transport.Transport = &httpTransport
 
 	return yggdrasil.New(transport, strfmt.Default, nil)
 }
 
-func (h *HttpClient) UpdateTLS(newTls tls.Config) {
+func (h *HttpClient) UpdateTLS(newTls *tls.Config) {
 	h.yggClient = newYggClient(h.url, newTls)
 }
 
@@ -67,12 +73,11 @@ func (h *HttpClient) Enrol(ctx context.Context, enrolInfo entities.EnrolementInf
 
 	zap.S().Debugw("enrol data", "data", data)
 
-	b, a, err := h.yggClient.PostDataMessageForDevice(ctx, &data)
+	// TODO do something with output
+	_, _, err := h.yggClient.PostDataMessageForDevice(ctx, &data)
 	if err != nil {
 		return err
 	}
-
-	zap.S().Debugw("b", b, "a", a)
 
 	return nil
 }
@@ -117,10 +122,4 @@ func (h *HttpClient) Heartbeat(ctx context.Context, heartbeat entities.Heartbeat
 func (h *HttpClient) GetConfiguration(ctx context.Context) (entities.DeviceConfiguration, error) {
 	zap.S().Debugw("Get configuration")
 	return entities.DeviceConfiguration{}, nil
-}
-
-func defaultTransport() *http.Transport {
-	return &http.Transport{
-		ResponseHeaderTimeout: 10 * time.Second,
-	}
 }
