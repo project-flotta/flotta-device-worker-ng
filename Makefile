@@ -30,6 +30,18 @@ help: ## Display this help.
 
 ##@ Development
 
+generate-tools:
+ifeq (, $(shell which mockery))
+	(cd /tmp && go install github.com/vektra/mockery/...@v1.1.2)
+endif
+ifeq (, $(shell which mockgen))
+	(cd /tmp/ && go install github.com/golang/mock/mockgen@v1.6.0)
+endif
+	@exit
+
+generate: generate-tools
+	go generate ./...
+
 GOVER = $(shell pwd)/bin/gover
 gover:
 ifeq (, $(shell which ginkgo 2> /dev/null))
@@ -94,7 +106,10 @@ build-debug: build
 build: ## Build device worker
 build:
 	mkdir -p ./bin
-	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_OPTIONS) -o ./bin ./cmd/$(NAME)
+	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_OPTIONS) -o ./bin ./main.go
+
+run: build
+	./bin/main --config $(PWD)/resources/config.yaml
 
 # go-install-tool will 'go install' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))

@@ -1,0 +1,6 @@
+LOG_LEVEL: debug
+CA_ROOT: /tmp/ca.pem
+CERT: /tmp/cert.pem
+KEY: /tmp/key.pem
+SERVER: https://127.0.0.1:8043/api/flotta-management/v1
+DEVICE_ID: toto
