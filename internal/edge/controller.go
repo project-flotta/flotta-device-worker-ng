@@ -130,7 +130,14 @@ func (c *Controller) run() {
 			g, ctx := errgroup.WithContext(context.Background())
 
 			g.Go(func() error {
-				return c.client.Heartbeat(ctx, c.confManager.Heartbeat())
+				err := c.client.Heartbeat(ctx, c.confManager.Heartbeat())
+				if err != nil {
+					zap.S().Error("cannot send heartbeat", "error", err)
+
+					return err
+				}
+
+				return nil
 			})
 
 			g.Go(func() error {

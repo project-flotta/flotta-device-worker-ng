@@ -1,6 +1,9 @@
 package client
 
 import (
+	"time"
+
+	"github.com/go-openapi/strfmt"
 	"github.com/project-flotta/flotta-operator/models"
 	"github.com/tupyy/device-worker-ng/internal/entities"
 )
@@ -139,4 +142,57 @@ func hardwareEntity2Model(e entities.HardwareInfo) models.HardwareInfo {
 	}
 
 	return m
+}
+
+func heartbeatEntity2Model(e entities.Heartbeat) models.Heartbeat {
+	hardware := hardwareEntity2Model(*e.Hardware)
+
+	m := models.Heartbeat{
+		Hardware: &hardware,
+		Status:   e.Status.String(),
+		Upgrade:  &models.UpgradeStatus{
+			// CurrentCommitID:   e.Upgrade.CurrentCommitID,
+			// LastUpgradeStatus: e.Upgrade.LastUpgradeStatus,
+			// LastUpgradeTime:   e.Upgrade.LastUpgradeTime,
+		},
+		Version: e.Version,
+	}
+
+	m.Workloads = make([]*models.WorkloadStatus, 0, len(e.Workloads))
+	for _, w := range e.Workloads {
+		ww := models.WorkloadStatus{
+			LastDataUpload: strfmt.DateTime(w.LastDataUpload),
+			Name:           w.Name,
+			Status:         w.Status.String(),
+		}
+
+		m.Workloads = append(m.Workloads, &ww)
+	}
+
+	m.Events = make([]*models.EventInfo, 0, len(e.Events))
+	for _, event := range e.Events {
+		me := models.EventInfo{
+			Message: event.Message,
+			Reason:  event.Reason,
+			Type:    event.Type.String(),
+		}
+
+		m.Events = append(m.Events, &me)
+	}
+
+	return m
+}
+
+func configurationModel2Entity(m models.DeviceConfiguration) entities.DeviceConfiguration {
+	e := entities.DeviceConfiguration{
+		Heartbeat: entities.HeartbeatConfiguration{
+			HardwareProfile: entities.HardwareProfileConfiguration{
+				Include: m.Heartbeat.HardwareProfile.Include,
+				Scope:   entities.FullScope,
+			},
+			Period: time.Duration(int(m.Heartbeat.PeriodSeconds) * int(time.Second)),
+		},
+	}
+
+	return e
 }

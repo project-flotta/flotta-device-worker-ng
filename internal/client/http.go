@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -116,11 +117,62 @@ func (h *HttpClient) Register(ctx context.Context, registerInfo entities.Registr
 }
 
 func (h *HttpClient) Heartbeat(ctx context.Context, heartbeat entities.Heartbeat) error {
-	zap.S().Debugw("Heartbeat", "heartbeat", heartbeat)
+	m := heartbeatEntity2Model(heartbeat)
+
+	data := yggClient.PostDataMessageForDeviceParams{
+		DeviceID: config.GetDeviceID(),
+		Message: &models.Message{
+			MessageID: uuid.NewString(),
+			Directive: "heartbeat",
+			Content:   m,
+		},
+	}
+
+	zap.S().Debugw("Heartbeat", "heartbeat", m)
+
+	_, _, err := h.yggClient.PostDataMessageForDevice(ctx, &data)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (h *HttpClient) GetConfiguration(ctx context.Context) (entities.DeviceConfiguration, error) {
-	zap.S().Debugw("Get configuration")
-	return entities.DeviceConfiguration{}, nil
+	params := yggClient.GetDataMessageForDeviceParams{
+		DeviceID: config.GetDeviceID(),
+	}
+
+	res, err := h.yggClient.GetDataMessageForDevice(ctx, &params)
+	if err != nil {
+		return entities.DeviceConfiguration{}, fmt.Errorf("cannot get device configuration: %w", err)
+	}
+
+	data, ok := res.Payload.Content.(map[string]interface{})
+	if !ok {
+		return entities.DeviceConfiguration{}, fmt.Errorf("payload content is not a map")
+	}
+
+	conf, ok := data["configuration"]
+	if !ok {
+		return entities.DeviceConfiguration{}, fmt.Errorf("cannot find configuration data in payload")
+	}
+
+	var m models.DeviceConfiguration
+
+	j, err := json.Marshal(conf)
+	if err != nil {
+		return entities.DeviceConfiguration{}, fmt.Errorf("cannot read configuration: '%w'", err)
+	}
+
+	err = json.Unmarshal(j, &m)
+	if err != nil {
+		return entities.DeviceConfiguration{}, fmt.Errorf("cannot read configuration: '%w'", err)
+	}
+
+	e := configurationModel2Entity(m)
+
+	zap.S().Debugw("new configuration", "conf", e)
+
+	return e, nil
 }

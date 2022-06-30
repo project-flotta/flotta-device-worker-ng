@@ -23,3 +23,5 @@ gover.coverprofile
 
 # RPM
 *.tar.gz
+
+resources/certificates/

@@ -12,6 +12,10 @@ type Manager struct {
 func (c *Manager) Configuration() entities.DeviceConfiguration {
 	return entities.DeviceConfiguration{
 		Heartbeat: entities.HeartbeatConfiguration{
+			HardwareProfile: entities.HardwareProfileConfiguration{
+				Include: true,
+				Scope:   entities.FullScope,
+			},
 			Period: 1 * time.Second,
 		},
 	}
@@ -23,5 +27,8 @@ func (c *Manager) GetHardwareInfo() entities.HardwareInfo {
 }
 
 func (c *Manager) Heartbeat() entities.Heartbeat {
-	return entities.Heartbeat{}
+	h := c.GetHardwareInfo()
+	return entities.Heartbeat{
+		Hardware: &h,
+	}
 }
