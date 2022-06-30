@@ -56,9 +56,10 @@ func (c *Controller) Shutdown() {
 
 func (c *Controller) run() {
 	var (
-		register chan struct{}
-		enrol    = make(chan struct{}, 1)
-		op       = make(chan struct{}, 1)
+		register      chan struct{}
+		enrol         = make(chan struct{}, 1)
+		op            = make(chan struct{}, 1)
+		configuration = make(chan time.Duration, 1)
 	)
 
 	ticker := time.NewTicker(c.confManager.Configuration().Heartbeat.Period)
@@ -141,10 +142,18 @@ func (c *Controller) run() {
 			})
 
 			g.Go(func() error {
-				_, err := c.client.GetConfiguration(ctx)
+				newConfiguration, err := c.client.GetConfiguration(ctx)
 				if err != nil {
 					return err
 				}
+
+				if newConfiguration.Heartbeat.Period != c.confManager.Configuration().Heartbeat.Period {
+					zap.S().Infof("new heartbeat period: %s", newConfiguration.Heartbeat.Period)
+					configuration <- newConfiguration.Heartbeat.Period
+				}
+
+				c.confManager.SetConfiguration(newConfiguration)
+
 				return nil
 			})
 
@@ -159,6 +168,9 @@ func (c *Controller) run() {
 					// it is something with code >= 400 so we keep going doing op
 				}
 			}
+		case c := <-configuration:
+			// this branch reset the ticker when a new configuration period is set
+			ticker.Reset(c)
 		case <-ticker.C:
 			if enrol != nil {
 				enrol <- struct{}{}

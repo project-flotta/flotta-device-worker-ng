@@ -13,6 +13,7 @@ import (
 	config "github.com/tupyy/device-worker-ng/configuration"
 	"github.com/tupyy/device-worker-ng/internal/certificate"
 	"github.com/tupyy/device-worker-ng/internal/client"
+	"github.com/tupyy/device-worker-ng/internal/configuration"
 	"github.com/tupyy/device-worker-ng/internal/edge"
 	"go.uber.org/zap"
 )
@@ -55,7 +56,9 @@ var rootCmd = &cobra.Command{
 			panic(err)
 		}
 
-		_ = edge.New(httpClient, nil, certManager)
+		confManager := configuration.New()
+
+		_ = edge.New(httpClient, confManager, certManager)
 
 		done := make(chan os.Signal, 1)
 		signal.Notify(done, os.Interrupt, os.Kill)

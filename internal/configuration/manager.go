@@ -7,10 +7,11 @@ import (
 )
 
 type Manager struct {
+	conf entities.DeviceConfiguration
 }
 
-func (c *Manager) Configuration() entities.DeviceConfiguration {
-	return entities.DeviceConfiguration{
+func New() *Manager {
+	c := entities.DeviceConfiguration{
 		Heartbeat: entities.HeartbeatConfiguration{
 			HardwareProfile: entities.HardwareProfileConfiguration{
 				Include: true,
@@ -19,6 +20,16 @@ func (c *Manager) Configuration() entities.DeviceConfiguration {
 			Period: 1 * time.Second,
 		},
 	}
+
+	return &Manager{c}
+}
+
+func (c *Manager) Configuration() entities.DeviceConfiguration {
+	return c.conf
+}
+
+func (c *Manager) SetConfiguration(e entities.DeviceConfiguration) {
+	c.conf = e
 }
 
 func (c *Manager) GetHardwareInfo() entities.HardwareInfo {
