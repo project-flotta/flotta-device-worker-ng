@@ -43,7 +43,7 @@ func New(client Client, confManager *configuration.Manager, certManager *certifi
 		client:      client,
 		confManager: confManager,
 		certManager: certManager,
-		done:        make(chan chan struct{}),
+		done:        make(chan chan struct{}, 1),
 	}
 
 	go c.run()
@@ -52,7 +52,9 @@ func New(client Client, confManager *configuration.Manager, certManager *certifi
 }
 
 func (c *Controller) Shutdown() {
-	<-c.done <- struct{}{}
+	d := make(chan struct{}, 1)
+	c.done <- d
+	<-d
 }
 
 func (c *Controller) run() {
@@ -184,6 +186,7 @@ func (c *Controller) run() {
 
 			op <- struct{}{}
 		case d := <-c.done:
+			zap.S().Info("shutdown controller")
 			ticker.Stop()
 			d <- struct{}{}
 		}

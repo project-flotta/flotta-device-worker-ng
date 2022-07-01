@@ -51,6 +51,7 @@ var rootCmd = &cobra.Command{
 			panic(err)
 		}
 
+		// httpClient is a wrapper around yggdrasil http client.
 		httpClient, err := client.New(config.GetServerAddress(), tlsConfig)
 		if err != nil {
 			panic(err)
@@ -58,12 +59,15 @@ var rootCmd = &cobra.Command{
 
 		confManager := configuration.New()
 
-		_ = edge.New(httpClient, confManager, certManager)
+		controller := edge.New(httpClient, confManager, certManager)
 
 		done := make(chan os.Signal, 1)
 		signal.Notify(done, os.Interrupt, os.Kill)
 
 		<-done
+
+		controller.Shutdown()
+
 	},
 }
 
