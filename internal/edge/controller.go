@@ -3,6 +3,7 @@ package edge
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"time"
 
 	config "github.com/tupyy/device-worker-ng/configuration"
@@ -81,10 +82,10 @@ func (c *Controller) run() {
 				break
 			}
 
-			zap.S().Info("Device enrolled")
-
-			enrol = nil // be sure we are not arrive again here without doing the registration
+			enrol = nil
 			register = make(chan struct{}, 1)
+
+			zap.S().Info("Device enrolled")
 		case <-register:
 			zap.S().Info("Registering device")
 
@@ -109,6 +110,7 @@ func (c *Controller) run() {
 
 			if err := c.certManager.WriteCertificate(config.GetCertificateFile(), config.GetPrivateKey()); err != nil {
 				zap.S().Errorw("cannot write certificates", "error", err)
+				break
 			}
 
 			newTLS, err := c.certManager.TLSConfig()
@@ -120,11 +122,10 @@ func (c *Controller) run() {
 			// update tls config of the client
 			c.client.UpdateTLS(newTLS)
 
-			zap.S().Debugf("Registration certificate: %s", signedCSR)
-			zap.S().Info("Device registered")
-
 			// registration has been successful
 			register = nil
+
+			zap.S().Info("Device registered")
 		case <-op:
 			// This branch handles the main operations: send heartbeat and get the configuration.
 			// If there is an error of type UnauthorizedAccessError restart the registration process.
@@ -133,9 +134,7 @@ func (c *Controller) run() {
 			g.Go(func() error {
 				err := c.client.Heartbeat(ctx, c.confManager.Heartbeat())
 				if err != nil {
-					zap.S().Error("cannot send heartbeat", "error", err)
-
-					return err
+					return fmt.Errorf("cannot send heartbeat: '%w'", err)
 				}
 
 				return nil
@@ -144,7 +143,7 @@ func (c *Controller) run() {
 			g.Go(func() error {
 				newConfiguration, err := c.client.GetConfiguration(ctx)
 				if err != nil {
-					return err
+					return fmt.Errorf("cannot get configuration '%w'", err)
 				}
 
 				if newConfiguration.Heartbeat.Period != c.confManager.Configuration().Heartbeat.Period {
@@ -160,17 +159,18 @@ func (c *Controller) run() {
 			if err := g.Wait(); err != nil {
 				zap.S().Errorf("Error during op: %s", err)
 
+				// TODO refactor this into something better
 				switch err.(type) {
 				case UnauthorizedAccessError:
 					// start the registration process once again
 					enrol = make(chan struct{}, 1)
 				default:
-					// it is something with code >= 400 so we keep going doing op
+					// it is something with code != 401 so we keep going doing op
 				}
 			}
-		case c := <-configuration:
+		case newPerdiod := <-configuration:
 			// this branch reset the ticker when a new configuration period is set
-			ticker.Reset(c)
+			ticker.Reset(newPerdiod)
 		case <-ticker.C:
 			if enrol != nil {
 				enrol <- struct{}{}
