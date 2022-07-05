@@ -7,7 +7,8 @@ import (
 )
 
 type Manager struct {
-	conf entities.DeviceConfiguration
+	conf     entities.DeviceConfiguration
+	hardware entities.HardwareInfo
 }
 
 func New() *Manager {
@@ -21,7 +22,10 @@ func New() *Manager {
 		},
 	}
 
-	return &Manager{c}
+	m := &Manager{conf: c}
+	m.hardware = m.GetHardwareInfo()
+
+	return m
 }
 
 func (c *Manager) Configuration() entities.DeviceConfiguration {
@@ -38,8 +42,7 @@ func (c *Manager) GetHardwareInfo() entities.HardwareInfo {
 }
 
 func (c *Manager) Heartbeat() entities.Heartbeat {
-	h := c.GetHardwareInfo()
 	return entities.Heartbeat{
-		Hardware: &h,
+		Hardware: &c.hardware,
 	}
 }

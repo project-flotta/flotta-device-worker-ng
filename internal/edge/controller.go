@@ -16,12 +16,16 @@ import (
 
 //go:generate mockgen -package=edge -destination=mock_client.go --build_flags=--mod=mod . Client
 type Client interface {
+	// UpdateTLS updates the tls configuration of the client.
+	// Updating TLS configuration is required after a successful registration when the CSR is signed by the operator and
+	// it must be used to be able to connect to the cluster.
 	UpdateTLS(newTlS *tls.Config)
 
 	// Enrol sends the enrolment information.
 	Enrol(ctx context.Context, info entities.EnrolementInfo) error
 
-	// Register sends the registration info
+	// Register sends the registration info.
+	// Registration info is actually a csr which will be signed by the operator and send back with the response.
 	Register(ctx context.Context, registerInfo entities.RegistrationInfo) ([]byte, error)
 
 	// Heartbeat
@@ -131,6 +135,11 @@ func (c *Controller) run() {
 		case <-op:
 			// This branch handles the main operations: send heartbeat and get the configuration.
 			// If there is an error of type UnauthorizedAccessError restart the registration process.
+			// For any other error, we keep this branch active.
+			// TODO in case of an error other than 401, replace the ticker with a back-off retry
+
+			// We execute _heartbeat_ and _configuration_ op asynchronously but
+			// we stop at the first error.
 			g, ctx := errgroup.WithContext(context.Background())
 
 			g.Go(func() error {
@@ -148,6 +157,7 @@ func (c *Controller) run() {
 					return fmt.Errorf("cannot get configuration '%w'", err)
 				}
 
+				// reset the ticker if the heartbeat period changed.
 				if newConfiguration.Heartbeat.Period != c.confManager.Configuration().Heartbeat.Period {
 					zap.S().Infof("new heartbeat period: %s", newConfiguration.Heartbeat.Period)
 					configuration <- newConfiguration.Heartbeat.Period
@@ -170,10 +180,12 @@ func (c *Controller) run() {
 					// it is something with code != 401 so we keep going doing op
 				}
 			}
-		case newPerdiod := <-configuration:
+		case heartbeatPeriod := <-configuration:
 			// this branch reset the ticker when a new configuration period is set
-			ticker.Reset(newPerdiod)
+			ticker.Reset(heartbeatPeriod)
 		case <-ticker.C:
+			// if enrol or registration channels are not nil then start the enrol and registration process.
+			// Otherwise process directly with normal operation
 			if enrol != nil {
 				enrol <- struct{}{}
 				break
