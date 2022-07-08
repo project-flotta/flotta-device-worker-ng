@@ -42,4 +42,9 @@ Run the device-worker:
 device-worker-ng --config config.yaml 
 ```
 
+If you prefer, you can use environment variable with the prefix `EDGE_DEVICE`:
+```
+EDGE_DEVICE_CA_ROOT=path_to_ca EDGE_DEVICE_CERT=path_to_cert EDGE_DEVICE_KEY=path_to_key EDGE_DEVICE_SERVER=https://127.0.0.1:8043 device-worker-ng
+```
+
 
