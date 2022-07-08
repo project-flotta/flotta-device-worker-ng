@@ -9,15 +9,19 @@ import (
 	"github.com/project-flotta/flotta-operator/models"
 )
 
-// extractData extracts data from the message content
-func extractData[T any](res *http.Response, extractKey string) (T, error) {
-	var result T
+// extractData extracts data from the message content by looking into message.Content map and
+// applying a custom transformation function on the extracted data.
+func extractData[T, S any](response *http.Response, extractKey string, tranformFunc func(t T) (S, error)) (S, error) {
+	var (
+		result S
+		res    T
+	)
 
-	data, err := ioutil.ReadAll(res.Body)
+	data, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		return result, fmt.Errorf("cannot read response body '%w'", err)
 	}
-	defer res.Body.Close()
+	defer response.Body.Close()
 
 	var message models.MessageResponse
 	err = json.Unmarshal(data, &message)
@@ -35,9 +39,33 @@ func extractData[T any](res *http.Response, extractKey string) (T, error) {
 		return result, fmt.Errorf("cannot find configuration data in payload")
 	}
 
-	result, ok = d.(T)
+	res, ok = d.(T)
 	if !ok {
 		return result, fmt.Errorf("cannot extract data from content. wrong type")
+	}
+
+	// apply custom transformation function on the result
+	if tranformFunc != nil {
+		result, err = tranformFunc(res)
+		if err != nil {
+			return result, fmt.Errorf("error applying transformation function %w", err)
+		}
+	}
+
+	return result, nil
+}
+
+func transform[T, S any](data T) (S, error) {
+	var result S
+
+	j, err := json.Marshal(data)
+	if err != nil {
+		return result, fmt.Errorf("cannot marshal data: '%w'", err)
+	}
+
+	err = json.Unmarshal(j, &result)
+	if err != nil {
+		return result, fmt.Errorf("cannot unmarshal configuration: '%w'", err)
 	}
 
 	return result, nil

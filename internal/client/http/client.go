@@ -7,7 +7,6 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"net/http"
@@ -81,13 +80,13 @@ func (c *Client) Enrol(ctx context.Context, deviceID string, enrolInfo entities.
 		return fmt.Errorf("cannot create enrollment request '%w'", err)
 	}
 
-	resp, err := c.do(request)
+	response, err := c.do(request)
 	if err != nil {
 		return fmt.Errorf("cannot enrol device '%w'", err)
 	}
 
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("cannot enrol device. code: %d", resp.StatusCode)
+	if response.StatusCode >= 400 {
+		return fmt.Errorf("cannot enrol device. code: %d", response.StatusCode)
 	}
 
 	return nil
@@ -106,12 +105,12 @@ func (c *Client) Register(ctx context.Context, deviceID string, registerInfo ent
 		return entities.RegistrationResponse{}, fmt.Errorf("cannot create registration request '%w'", err)
 	}
 
-	res, err := c.do(request)
+	response, err := c.do(request)
 	if err != nil {
 		return entities.RegistrationResponse{}, fmt.Errorf("cannot register device '%w'", err)
 	}
 
-	data, err := extractData[string](res, certificateKey)
+	data, err := extractData[string, string](response, certificateKey, nil)
 	if err != nil {
 		return entities.RegistrationResponse{}, err
 	}
@@ -132,14 +131,14 @@ func (c *Client) Heartbeat(ctx context.Context, deviceID string, heartbeat entit
 		return fmt.Errorf("cannot create heartbeat request '%w'", err)
 	}
 
-	resp, err := c.do(request)
+	response, err := c.do(request)
 	if err != nil {
 		return fmt.Errorf("cannot send heartbeat '%w'", err)
 	}
 
 	// TODO send typed error based on status code
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("cannot send heartbeat. code: %d", resp.StatusCode)
+	if response.StatusCode >= 400 {
+		return fmt.Errorf("cannot send heartbeat. code: %d", response.StatusCode)
 	}
 
 	return nil
@@ -157,29 +156,19 @@ func (c *Client) GetConfiguration(ctx context.Context, deviceID string) (entitie
 		return entities.DeviceConfiguration{}, fmt.Errorf("cannot create configuration request '%w'", err)
 	}
 
-	res, err := c.do(request)
+	response, err := c.do(request)
 	if err != nil {
 		return entities.DeviceConfiguration{}, fmt.Errorf("cannot get configuration '%w'", err)
 	}
 
-	data, err := extractData[map[string]interface{}](res, "configuration")
+	// TODO check the response code
+
+	data, err := extractData(response, "configuration", transform[map[string]interface{}, models.DeviceConfiguration])
 	if err != nil {
 		return entities.DeviceConfiguration{}, err
 	}
 
-	var m models.DeviceConfiguration
-
-	j, err := json.Marshal(data)
-	if err != nil {
-		return entities.DeviceConfiguration{}, fmt.Errorf("cannot read configuration: '%w'", err)
-	}
-
-	err = json.Unmarshal(j, &m)
-	if err != nil {
-		return entities.DeviceConfiguration{}, fmt.Errorf("cannot read configuration: '%w'", err)
-	}
-
-	return configurationModel2Entity(m), nil
+	return configurationModel2Entity(data), nil
 }
 
 func (c *Client) do(request *http.Request) (*http.Response, error) {
