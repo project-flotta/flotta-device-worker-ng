@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"time"
@@ -112,22 +111,12 @@ func (c *Client) Register(ctx context.Context, deviceID string, registerInfo ent
 		return entities.RegistrationResponse{}, fmt.Errorf("cannot register device '%w'", err)
 	}
 
-	message, err := c.processResponse(res)
+	data, err := extractData[string](res, certificateKey)
 	if err != nil {
 		return entities.RegistrationResponse{}, err
 	}
 
-	certMap, ok := message.Content.(map[string]interface{})
-	if !ok {
-		return entities.RegistrationResponse{}, fmt.Errorf("payload content is not a map")
-	}
-
-	cert, ok := certMap[certificateKey]
-	if !ok {
-		return entities.RegistrationResponse{}, fmt.Errorf("cannot get certificate from payload")
-	}
-
-	return entities.RegistrationResponse{SignedCSR: bytes.NewBufferString(cert.(string)).Bytes()}, nil
+	return entities.RegistrationResponse{SignedCSR: bytes.NewBufferString(data).Bytes()}, nil
 }
 
 func (c *Client) Heartbeat(ctx context.Context, deviceID string, heartbeat entities.Heartbeat) error {
@@ -173,24 +162,14 @@ func (c *Client) GetConfiguration(ctx context.Context, deviceID string) (entitie
 		return entities.DeviceConfiguration{}, fmt.Errorf("cannot get configuration '%w'", err)
 	}
 
-	message, err := c.processResponse(res)
+	data, err := extractData[map[string]interface{}](res, "configuration")
 	if err != nil {
 		return entities.DeviceConfiguration{}, err
 	}
 
-	data, ok := message.Content.(map[string]interface{})
-	if !ok {
-		return entities.DeviceConfiguration{}, fmt.Errorf("payload content is not a map")
-	}
-
-	conf, ok := data["configuration"]
-	if !ok {
-		return entities.DeviceConfiguration{}, fmt.Errorf("cannot find configuration data in payload")
-	}
-
 	var m models.DeviceConfiguration
 
-	j, err := json.Marshal(conf)
+	j, err := json.Marshal(data)
 	if err != nil {
 		return entities.DeviceConfiguration{}, fmt.Errorf("cannot read configuration: '%w'", err)
 	}
@@ -216,7 +195,7 @@ func (c *Client) do(request *http.Request) (*http.Response, error) {
 // It checks if certifcates signatures changed and if true it recreates a new transport.
 func (c *Client) getClient() (*http.Client, error) {
 	if !bytes.Equal(c.certificateSignature, c.certMananger.Signature()) {
-		zap.S().Info("certificates changed. recreate transport")
+		zap.S().Info("Certificates have changed. Recreate transport")
 		t, err := c.createTransport()
 		if err != nil {
 			return nil, err
@@ -289,20 +268,4 @@ func (c *Client) createTLSConfig() (*tls.Config, error) {
 	config.Certificates = []tls.Certificate{cc}
 
 	return &config, nil
-}
-
-func (c *Client) processResponse(res *http.Response) (models.MessageResponse, error) {
-	data, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return models.MessageResponse{}, fmt.Errorf("cannot read response body '%w'", err)
-	}
-	defer res.Body.Close()
-
-	var message models.MessageResponse
-	err = json.Unmarshal(data, &message)
-	if err != nil {
-		return models.MessageResponse{}, fmt.Errorf("cannot read marshal body into message response '%w'", err)
-	}
-
-	return message, nil
 }

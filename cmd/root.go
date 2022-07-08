@@ -5,7 +5,6 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"encoding/json"
 	"os"
 	"os/signal"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/tupyy/device-worker-ng/internal/configuration"
 	"github.com/tupyy/device-worker-ng/internal/edge"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -84,34 +84,36 @@ func init() {
 }
 
 func setupLogger() *zap.Logger {
-	rawJSON := []byte(`{
-	  "level": "info",
-	  "encoding": "json",
-	  "outputPaths": ["stdout"],
-	  "errorOutputPaths": ["stderr"],
-	  "encoderConfig": {
-	    "messageKey": "message",
-	    "levelKey": "level",
-	    "levelEncoder": "lowercase"
-	  }
-	}`)
-
-	var cfg zap.Config
-	if err := json.Unmarshal(rawJSON, &cfg); err != nil {
-		panic(err)
+	loggerCfg := &zap.Config{
+		Level:    zap.NewAtomicLevelAt(zapcore.InfoLevel),
+		Encoding: "json",
+		EncoderConfig: zapcore.EncoderConfig{
+			TimeKey:        "time",
+			LevelKey:       "severity",
+			NameKey:        "logger",
+			CallerKey:      "caller",
+			MessageKey:     "message",
+			StacktraceKey:  "stacktrace",
+			LineEnding:     zapcore.DefaultLineEnding,
+			EncodeTime:     zapcore.RFC3339TimeEncoder,
+			EncodeDuration: zapcore.MillisDurationEncoder,
+			EncodeCaller:   zapcore.ShortCallerEncoder,
+		},
+		OutputPaths:      []string{"stdout"},
+		ErrorOutputPaths: []string{"stderr"},
 	}
 
 	atomicLogLevel, err := zap.ParseAtomicLevel(logLevel)
 	if err == nil {
-		cfg.Level = atomicLogLevel
+		loggerCfg.Level = atomicLogLevel
 	}
 
-	logger, err := cfg.Build()
+	plain, err := loggerCfg.Build(zap.AddStacktrace(zap.DPanicLevel))
 	if err != nil {
 		panic(err)
 	}
 
-	return logger
+	return plain
 }
 
 func initCertificateManager(caroot, certFile, keyFile string) (*certificate.Manager, error) {
