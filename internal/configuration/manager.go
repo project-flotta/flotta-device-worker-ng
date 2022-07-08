@@ -37,8 +37,7 @@ func (c *Manager) SetConfiguration(e entities.DeviceConfiguration) {
 }
 
 func (c *Manager) GetHardwareInfo() entities.HardwareInfo {
-	h := NewHardwareInfo(nil)
-	return h.GetHardwareInformation()
+	return c.hardware
 }
 
 func (c *Manager) Heartbeat() entities.Heartbeat {

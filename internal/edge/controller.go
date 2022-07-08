@@ -2,7 +2,6 @@ package edge
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"time"
 
@@ -16,23 +15,18 @@ import (
 
 //go:generate mockgen -package=edge -destination=mock_client.go --build_flags=--mod=mod . Client
 type Client interface {
-	// UpdateTLS updates the tls configuration of the client.
-	// Updating TLS configuration is required after a successful registration when the CSR is signed by the operator and
-	// it must be used to be able to connect to the cluster.
-	UpdateTLS(newTlS *tls.Config)
-
 	// Enrol sends the enrolment information.
-	Enrol(ctx context.Context, info entities.EnrolementInfo) error
+	Enrol(ctx context.Context, deviceID string, info entities.EnrolementInfo) error
 
 	// Register sends the registration info.
 	// Registration info is actually a csr which will be signed by the operator and send back with the response.
-	Register(ctx context.Context, registerInfo entities.RegistrationInfo) ([]byte, error)
+	Register(ctx context.Context, deviceID string, registerInfo entities.RegistrationInfo) (entities.RegistrationResponse, error)
 
 	// Heartbeat
-	Heartbeat(ctx context.Context, heartbeat entities.Heartbeat) error
+	Heartbeat(ctx context.Context, deviceID string, heartbeat entities.Heartbeat) error
 
 	// GetConfiguration get the configuration from flotta-operator
-	GetConfiguration(ctx context.Context) (entities.DeviceConfiguration, error)
+	GetConfiguration(ctx context.Context, deviceID string) (entities.DeviceConfiguration, error)
 }
 
 type Controller struct {
@@ -83,7 +77,7 @@ func (c *Controller) run() {
 				TargetNamespace: config.GetTargetNamespace(),
 			}
 
-			if err := c.client.Enrol(context.TODO(), enrolInfo); err != nil {
+			if err := c.client.Enrol(context.TODO(), config.GetDeviceID(), enrolInfo); err != nil {
 				zap.S().Errorw("Cannot enroll device", "error", err, "enrolement info", enrolInfo)
 				break
 			}
@@ -106,27 +100,18 @@ func (c *Controller) run() {
 				Hardware:           c.confManager.GetHardwareInfo(),
 			}
 
-			signedCSR, err := c.client.Register(context.TODO(), registerInfo)
+			res, err := c.client.Register(context.TODO(), config.GetDeviceID(), registerInfo)
 			if err != nil {
 				zap.S().Errorw("Cannot register device", "error", err, "registration info", registerInfo)
 				break
 			}
 
-			c.certManager.SetCertificate(signedCSR, key)
+			c.certManager.SetCertificate(res.SignedCSR, key)
 
 			if err := c.certManager.WriteCertificate(config.GetCertificateFile(), config.GetPrivateKey()); err != nil {
 				zap.S().Errorw("cannot write certificates", "error", err)
 				break
 			}
-
-			newTLS, err := c.certManager.TLSConfig()
-			if err != nil {
-				zap.S().Error("cannot create the tls config from signed CSR")
-				break
-			}
-
-			// update tls config of the client
-			c.client.UpdateTLS(newTLS)
 
 			// registration has been successful
 			register = nil
@@ -143,7 +128,7 @@ func (c *Controller) run() {
 			g, ctx := errgroup.WithContext(context.Background())
 
 			g.Go(func() error {
-				err := c.client.Heartbeat(ctx, c.confManager.Heartbeat())
+				err := c.client.Heartbeat(ctx, config.GetDeviceID(), c.confManager.Heartbeat())
 				if err != nil {
 					return fmt.Errorf("cannot send heartbeat: '%w'", err)
 				}
@@ -152,7 +137,7 @@ func (c *Controller) run() {
 			})
 
 			g.Go(func() error {
-				newConfiguration, err := c.client.GetConfiguration(ctx)
+				newConfiguration, err := c.client.GetConfiguration(ctx, config.GetDeviceID())
 				if err != nil {
 					return fmt.Errorf("cannot get configuration '%w'", err)
 				}
