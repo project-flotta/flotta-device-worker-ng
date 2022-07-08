@@ -7,7 +7,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -90,25 +89,14 @@ func (c *Manager) SetCertificate(cert, privateKey []byte) error {
 	return nil
 }
 
-func (c *Manager) TLSConfig() (*tls.Config, error) {
-	config := tls.Config{
-		RootCAs: c.rootCA,
-	}
+// Signature returns the client certificate signature.
+func (c *Manager) Signature() []byte {
+	return c.cert.Signature[:]
+}
 
-	certPEM := new(bytes.Buffer)
-	err := pem.Encode(certPEM, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: c.cert.Raw,
-	})
-	//
-	cert, err := tls.X509KeyPair(certPEM.Bytes(), c.marshalKeyToPem(c.privateKey).Bytes())
-	if err != nil {
-		return nil, fmt.Errorf("cannot create x509 key pair: %w", err)
-	}
-
-	config.Certificates = []tls.Certificate{cert}
-
-	return &config, nil
+// GetCertificates returns the CA certificate, client certificate and private key.
+func (c *Manager) GetCertificates() (*x509.CertPool, *x509.Certificate, crypto.PrivateKey) {
+	return c.rootCA, c.cert, c.privateKey
 }
 
 func (c *Manager) GenerateCSR(deviceID string) ([]byte, []byte, error) {

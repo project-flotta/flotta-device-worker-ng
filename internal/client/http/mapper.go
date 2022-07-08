@@ -39,7 +39,6 @@ func hardwareEntity2Model(e entities.HardwareInfo) models.HardwareInfo {
 		CPU: &models.CPU{
 			Architecture: e.CPU.Architecture,
 			Count:        e.CPU.Count,
-			Flags:        e.CPU.Flags,
 			Frequency:    e.CPU.Frequency,
 			ModelName:    e.CPU.ModelName,
 		},
@@ -54,6 +53,12 @@ func hardwareEntity2Model(e entities.HardwareInfo) models.HardwareInfo {
 			SerialNumber: e.SystemVendor.SerialNumber,
 			Virtual:      e.SystemVendor.Virtual,
 		},
+	}
+
+	// set manually cpu flags due to missing omitempty in the model
+	m.CPU.Flags = make([]string, 0, len(e.CPU.Flags))
+	for _, f := range e.CPU.Flags {
+		m.CPU.Flags = append(m.CPU.Flags, f)
 	}
 
 	m.Disks = make([]*models.Disk, 0, len(e.Disks))

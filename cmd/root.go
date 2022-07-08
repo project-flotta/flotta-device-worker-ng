@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	config "github.com/tupyy/device-worker-ng/configuration"
 	"github.com/tupyy/device-worker-ng/internal/certificate"
-	"github.com/tupyy/device-worker-ng/internal/client"
+	httpClient "github.com/tupyy/device-worker-ng/internal/client/http"
 	"github.com/tupyy/device-worker-ng/internal/configuration"
 	"github.com/tupyy/device-worker-ng/internal/edge"
 	"go.uber.org/zap"
@@ -46,13 +46,8 @@ var rootCmd = &cobra.Command{
 			panic(err)
 		}
 
-		tlsConfig, err := certManager.TLSConfig()
-		if err != nil {
-			panic(err)
-		}
-
 		// httpClient is a wrapper around yggdrasil http client.
-		httpClient, err := client.New(config.GetServerAddress(), tlsConfig)
+		httpClient, err := httpClient.New(config.GetServerAddress(), certManager)
 		if err != nil {
 			panic(err)
 		}

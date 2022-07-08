@@ -2,5 +2,5 @@ LOG_LEVEL: debug
 CA_ROOT: /home/cosmin/projects/device-worker-ng/resources/certificates/ca.pem
 CERT: /home/cosmin/projects/device-worker-ng/resources/certificates/cert.pem
 KEY: /home/cosmin/projects/device-worker-ng/resources/certificates/key.pem
-SERVER: https://127.0.0.1:8043/api/flotta-management/v1
+SERVER: https://127.0.0.1:8043
 DEVICE_ID: toto

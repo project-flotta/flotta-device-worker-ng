@@ -7,3 +7,7 @@ type RegistrationInfo struct {
 	// hardware info
 	Hardware HardwareInfo
 }
+
+type RegistrationResponse struct {
+	SignedCSR []byte
+}
