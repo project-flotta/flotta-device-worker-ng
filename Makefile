@@ -8,6 +8,11 @@ NAME ?= device-worker-ng
 
 DOCKER ?= podman
 IMG ?= quay.io/ctupangiu/edgedevice-ng:latest
+VERSION ?= 0.1
+GIT_COMMIT=$(shell git rev-list -1 HEAD --abbrev-commit)
+
+IMAGE_TAG=$(VERSION)-$(GIT_COMMIT)
+IMAGE_NAME=device-worker-ng
 
 export GOFLAGS=-mod=vendor -tags=containers_image_openpgp
 
@@ -30,7 +35,7 @@ help: ## Display this help.
 
 ##@ Development
 
-generate-tools:
+generate.tools:
 ifeq (, $(shell which mockery))
 	(cd /tmp && go install github.com/vektra/mockery/...@v1.1.2)
 endif
@@ -56,8 +61,8 @@ else
 	GINKGO=$(shell which ginkgo)
 endif
 
-test-tools: ## Install test-tools
-test-tools: ginkgo gover
+test.tools: ## Install test-tools
+test.tools: ginkgo gover
 
 gosec: ## Run gosec locally
 	$(DOCKER) run --rm -it -v $(PWD):/opt/data/:z docker.io/securego/gosec -exclude-generated /opt/data/...
@@ -68,18 +73,18 @@ test: test-tools
 
 TEST_IMAGE_NAME ?= device-worker-test
 TEST_IMAGE_TAG ?= latest
-test-docker:
+test.docker:
 	$(DOCKER) build tools/ -f Dockerfile_test -t $(TEST_IMAGE_NAME):$(TEST_IMAGE_TAG)
 	$(DOCKER) run -v $(PWD):/device-worker --rm $(TEST_IMAGE_NAME):$(TEST_IMAGE_TAG)
 
-test-coverage:
-test-coverage: ## Run test and launch coverage tool
-test-coverage: GINKGO_OPTIONS ?= --cover
-test-coverage: test
+test.coverage:
+test.coverage: ## Run test and launch coverage tool
+test.coverage: GINKGO_OPTIONS ?= --cover
+test.coverage: test
 	gover
 	go tool cover -html gover.coverprofile
 
-test-coverage-clean:
+test.coverage.clean:
 	git ls-files --others --ignored --exclude-standard | grep "coverprofile$$" | xargs rm
 
 .PHONY: vendor
@@ -88,7 +93,7 @@ vendor:
 	go mod tidy
 	go mod vendor
 
-bump-operator: ## Bump flotta operator version dependency to the latest main
+bump.operator: ## Bump flotta operator version dependency to the latest main
 	$(eval OPARATOR_VERSION := $(shell curl -s https://api.github.com/repos/project-flotta/flotta-operator/commits/main | jq '.sha' -r))
 	go get -d github.com/project-flotta/flotta-operator@$(OPARATOR_VERSION)
 
@@ -98,18 +103,21 @@ clean: ## Clean project
 
 ##@ Build
 
-build-debug: ## Build with race conditions and lock checker
-build-debug: BUILD_OPTIONS=--race
-build-debug: CGO_ENABLED=1
-build-debug: build
+build.debug: ## Build with race conditions and lock checker
+build.debug: BUILD_OPTIONS=--race
+build.debug: CGO_ENABLED=1
+build.debug: build
 
 build: ## Build device worker
 build:
 	mkdir -p ./bin
-	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_OPTIONS) -o ./bin ./main.go
+	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_OPTIONS) -o ./bin/device-worker ./main.go
 
 run: build
-	./bin/main --config $(PWD)/resources/config.yaml
+	./bin/device-worker --config $(PWD)/resources/config.yaml
+
+build.docker:
+	$(DOCKER) build . -t $(IMAGE_NAME):$(IMAGE_TAG)
 
 # go-install-tool will 'go install' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
