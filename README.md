@@ -19,5 +19,27 @@ Last but not least, this implementation *does not* use _yggdrasil_ as broker. It
 - [ ] Execute workloads
 - [ ] Integration tests
 
+## Prerequisites
+
+You must have flotta operator and API server running and client certificates already generated.
+For more information, please read the [documentation](https://project-flotta.io/documentation/latest/intro/overview.html).
+
+## Usage
+
+Create a configuration yaml like:
+```
+LOG_LEVEL: debug
+CA_ROOT: /home/cosmin/projects/device-worker-ng/resources/certificates/ca.pem
+CERT: /home/cosmin/projects/device-worker-ng/resources/certificates/cert.pem
+KEY: /home/cosmin/projects/device-worker-ng/resources/certificates/key.pem
+SERVER: https://127.0.0.1:8043
+DEVICE_ID: toto
+```
+
+Run the device-worker:
+
+```
+device-worker-ng --config config.yaml 
+```
 
 
