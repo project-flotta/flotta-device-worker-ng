@@ -17,6 +17,10 @@ func extractData[T, S any](response *http.Response, extractKey string, tranformF
 		res    T
 	)
 
+	if tranformFunc == nil {
+		return result, fmt.Errorf("tranformFunc is missing")
+	}
+
 	data, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		return result, fmt.Errorf("cannot read response body '%w'", err)
@@ -45,18 +49,16 @@ func extractData[T, S any](response *http.Response, extractKey string, tranformF
 	}
 
 	// apply custom transformation function on the result
-	if tranformFunc != nil {
-		result, err = tranformFunc(res)
-		if err != nil {
-			return result, fmt.Errorf("error applying transformation function %w", err)
-		}
+	result, err = tranformFunc(res)
+	if err != nil {
+		return result, fmt.Errorf("error applying transformation function %w", err)
 	}
 
 	return result, nil
 }
 
-func transform[T, S any](data T) (S, error) {
-	var result S
+func transformToConfiguration(data map[string]interface{}) (models.DeviceConfiguration, error) {
+	var result models.DeviceConfiguration
 
 	j, err := json.Marshal(data)
 	if err != nil {

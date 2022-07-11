@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/project-flotta/flotta-operator/models"
 	"github.com/tupyy/device-worker-ng/internal/certificate"
 	"github.com/tupyy/device-worker-ng/internal/entities"
 	"go.uber.org/zap"
@@ -110,7 +109,7 @@ func (c *Client) Register(ctx context.Context, deviceID string, registerInfo ent
 		return entities.RegistrationResponse{}, fmt.Errorf("cannot register device '%w'", err)
 	}
 
-	data, err := extractData[string, string](response, certificateKey, nil)
+	data, err := extractData(response, certificateKey, func(data string) (string, error) { return data, nil })
 	if err != nil {
 		return entities.RegistrationResponse{}, err
 	}
@@ -163,7 +162,7 @@ func (c *Client) GetConfiguration(ctx context.Context, deviceID string) (entitie
 
 	// TODO check the response code
 
-	data, err := extractData(response, "configuration", transform[map[string]interface{}, models.DeviceConfiguration])
+	data, err := extractData(response, "configuration", transformToConfiguration)
 	if err != nil {
 		return entities.DeviceConfiguration{}, err
 	}
