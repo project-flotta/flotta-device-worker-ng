@@ -117,6 +117,47 @@ func TestInterpreter(t *testing.T) {
 			},
 			hasError: false,
 		},
+		{
+			test:     "x == 2 && y == 1 || z == 1",
+			expected: true,
+			variables: map[string]interface{}{
+				"x": 2,
+				"y": 1,
+				"z": 0,
+			},
+			hasError: false,
+		},
+		{
+			test:     "x == 2 && y == 1 || z == 1",
+			expected: false,
+			variables: map[string]interface{}{
+				"x": 2,
+				"y": 0,
+				"z": 0,
+			},
+			hasError: false,
+		},
+		{
+			test:     "z == 1 || x == 2 && y == 1",
+			expected: false,
+			variables: map[string]interface{}{
+				"x": 2,
+				"y": 0,
+				"z": 0,
+			},
+			hasError: false,
+		},
+		{
+			test:     "z == 1 || x == 2 && y == 1 || w == 0",
+			expected: true,
+			variables: map[string]interface{}{
+				"x": 2,
+				"y": 0,
+				"z": 1,
+				"w": 1,
+			},
+			hasError: false,
+		},
 	}
 
 	for idx, data := range exprs {
@@ -134,7 +175,7 @@ func TestInterpreter(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, res, data.expected)
+			assert.Equal(t, data.expected, res)
 		})
 	}
 }

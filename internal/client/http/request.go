@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/project-flotta/flotta-operator/models"
-	"github.com/tupyy/device-worker-ng/internal/entities"
+	"github.com/tupyy/device-worker-ng/internal/entity"
 )
 
 type requestType int
@@ -85,7 +85,7 @@ func (rb *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 
 	switch rb.action {
 	case enrolActionType:
-		enrolInfo, ok := rb.body.(entities.EnrolementInfo)
+		enrolInfo, ok := rb.body.(entity.EnrolementInfo)
 		if !ok {
 			return nil, errors.New("EnrolmentInfo type body is required for this type of request")
 		}
@@ -97,7 +97,7 @@ func (rb *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 			Type:      "command",
 		}
 	case registerActionType:
-		registrationInfo, ok := rb.body.(entities.RegistrationInfo)
+		registrationInfo, ok := rb.body.(entity.RegistrationInfo)
 		if !ok {
 			return nil, errors.New("RegistrationInfo type body is required for this type of request")
 		}
@@ -109,7 +109,7 @@ func (rb *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 			Type:      "command",
 		}
 	case heartbeatActionType:
-		heartbeatInfo, ok := rb.body.(entities.Heartbeat)
+		heartbeatInfo, ok := rb.body.(entity.Heartbeat)
 		if !ok {
 			return nil, errors.New("Heartbeat type body is required for this type of request")
 		}

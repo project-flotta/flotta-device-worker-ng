@@ -38,9 +38,14 @@ func extractData[T, S any](response *http.Response, extractKey string, tranformF
 		return result, fmt.Errorf("payload content is not a map")
 	}
 
-	d, ok := content[extractKey]
-	if !ok {
-		return result, fmt.Errorf("cannot find configuration data in payload")
+	var d interface{}
+	if extractKey != "" {
+		d, ok = content[extractKey]
+		if !ok {
+			return result, fmt.Errorf("cannot find configuration data in payload")
+		}
+	} else {
+		d = content
 	}
 
 	res, ok = d.(T)
@@ -57,8 +62,8 @@ func extractData[T, S any](response *http.Response, extractKey string, tranformF
 	return result, nil
 }
 
-func transformToConfiguration(data map[string]interface{}) (models.DeviceConfiguration, error) {
-	var result models.DeviceConfiguration
+func transformToConfiguration(data map[string]interface{}) (models.DeviceConfigurationMessage, error) {
+	var result models.DeviceConfigurationMessage
 
 	j, err := json.Marshal(data)
 	if err != nil {

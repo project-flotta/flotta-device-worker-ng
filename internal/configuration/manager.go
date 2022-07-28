@@ -1,47 +1,66 @@
 package configuration
 
 import (
+	"sync"
 	"time"
 
-	"github.com/tupyy/device-worker-ng/internal/entities"
+	"github.com/tupyy/device-worker-ng/internal/entity"
+)
+
+var (
+	// default configuration
+	defaultConfiguration = entity.DeviceConfigurationMessage{
+		Configuration: entity.DeviceConfiguration{
+			Heartbeat: entity.HeartbeatConfiguration{
+				HardwareProfile: entity.HardwareProfileConfiguration{
+					Include: true,
+					Scope:   entity.FullScope,
+				},
+				Period: 1 * time.Second,
+			},
+		},
+	}
 )
 
 type Manager struct {
-	conf     entities.DeviceConfiguration
-	hardware entities.HardwareInfo
+	conf     entity.DeviceConfigurationMessage
+	hardware entity.HardwareInfo
+	lock     sync.Mutex
 }
 
 func New() *Manager {
-	c := entities.DeviceConfiguration{
-		Heartbeat: entities.HeartbeatConfiguration{
-			HardwareProfile: entities.HardwareProfileConfiguration{
-				Include: true,
-				Scope:   entities.FullScope,
-			},
-			Period: 1 * time.Second,
-		},
-	}
-
-	m := &Manager{conf: c}
-	m.hardware = m.GetHardwareInfo()
+	m := &Manager{conf: defaultConfiguration}
 
 	return m
 }
 
-func (c *Manager) Configuration() entities.DeviceConfiguration {
+func (c *Manager) Configuration() entity.DeviceConfigurationMessage {
 	return c.conf
 }
 
-func (c *Manager) SetConfiguration(e entities.DeviceConfiguration) {
+func (c *Manager) SetConfiguration(e entity.DeviceConfigurationMessage) {
+	if e.Hash() == c.conf.Hash() {
+		return
+	}
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	tasks := c.createTasks(c.conf)
+
 	c.conf = e
 }
 
-func (c *Manager) GetHardwareInfo() entities.HardwareInfo {
-	return c.hardware
-}
-
-func (c *Manager) Heartbeat() entities.Heartbeat {
-	return entities.Heartbeat{
+func (c *Manager) Heartbeat() entity.Heartbeat {
+	return entity.Heartbeat{
 		Hardware: &c.hardware,
 	}
+}
+
+// createTasks creates a list of task from workload definition
+func (c *Manager) createTasks(conf entity.DeviceConfigurationMessage) map[string]entity.Task {
+	for _,, w := range conf.Workloads {
+
+	}
+	return map[string]entity.Task{}
 }

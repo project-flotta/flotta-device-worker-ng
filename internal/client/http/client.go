@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/certificate"
-	"github.com/tupyy/device-worker-ng/internal/entities"
+	"github.com/tupyy/device-worker-ng/internal/entity"
 	"go.uber.org/zap"
 )
 
@@ -66,7 +66,7 @@ func New(path string, certManager *certificate.Manager) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Enrol(ctx context.Context, deviceID string, enrolInfo entities.EnrolementInfo) error {
+func (c *Client) Enrol(ctx context.Context, deviceID string, enrolInfo entity.EnrolementInfo) error {
 	request, err := newRequestBuilder().
 		Type(postDataMessageForDeviceType).
 		Action(enrolActionType).
@@ -91,7 +91,7 @@ func (c *Client) Enrol(ctx context.Context, deviceID string, enrolInfo entities.
 	return nil
 }
 
-func (c *Client) Register(ctx context.Context, deviceID string, registerInfo entities.RegistrationInfo) (entities.RegistrationResponse, error) {
+func (c *Client) Register(ctx context.Context, deviceID string, registerInfo entity.RegistrationInfo) (entity.RegistrationResponse, error) {
 	request, err := newRequestBuilder().
 		Type(postDataMessageForDeviceType).
 		Action(registerActionType).
@@ -101,23 +101,23 @@ func (c *Client) Register(ctx context.Context, deviceID string, registerInfo ent
 		Build(ctx)
 
 	if err != nil {
-		return entities.RegistrationResponse{}, fmt.Errorf("cannot create registration request '%w'", err)
+		return entity.RegistrationResponse{}, fmt.Errorf("cannot create registration request '%w'", err)
 	}
 
 	response, err := c.do(request)
 	if err != nil {
-		return entities.RegistrationResponse{}, fmt.Errorf("cannot register device '%w'", err)
+		return entity.RegistrationResponse{}, fmt.Errorf("cannot register device '%w'", err)
 	}
 
 	data, err := extractData(response, certificateKey, func(data string) (string, error) { return data, nil })
 	if err != nil {
-		return entities.RegistrationResponse{}, err
+		return entity.RegistrationResponse{}, err
 	}
 
-	return entities.RegistrationResponse{SignedCSR: bytes.NewBufferString(data).Bytes()}, nil
+	return entity.RegistrationResponse{SignedCSR: bytes.NewBufferString(data).Bytes()}, nil
 }
 
-func (c *Client) Heartbeat(ctx context.Context, deviceID string, heartbeat entities.Heartbeat) error {
+func (c *Client) Heartbeat(ctx context.Context, deviceID string, heartbeat entity.Heartbeat) error {
 	request, err := newRequestBuilder().
 		Type(postDataMessageForDeviceType).
 		Action(heartbeatActionType).
@@ -143,7 +143,7 @@ func (c *Client) Heartbeat(ctx context.Context, deviceID string, heartbeat entit
 	return nil
 }
 
-func (c *Client) GetConfiguration(ctx context.Context, deviceID string) (entities.DeviceConfiguration, error) {
+func (c *Client) GetConfiguration(ctx context.Context, deviceID string) (entity.DeviceConfigurationMessage, error) {
 	request, err := newRequestBuilder().
 		Type(getDataMessageForDeviceType).
 		Action(configurationActionType).
@@ -152,19 +152,19 @@ func (c *Client) GetConfiguration(ctx context.Context, deviceID string) (entitie
 		Build(ctx)
 
 	if err != nil {
-		return entities.DeviceConfiguration{}, fmt.Errorf("cannot create configuration request '%w'", err)
+		return entity.DeviceConfigurationMessage{}, fmt.Errorf("cannot create configuration request '%w'", err)
 	}
 
 	response, err := c.do(request)
 	if err != nil {
-		return entities.DeviceConfiguration{}, fmt.Errorf("cannot get configuration '%w'", err)
+		return entity.DeviceConfigurationMessage{}, fmt.Errorf("cannot get configuration '%w'", err)
 	}
 
 	// TODO check the response code
 
-	data, err := extractData(response, "configuration", transformToConfiguration)
+	data, err := extractData(response, "", transformToConfiguration)
 	if err != nil {
-		return entities.DeviceConfiguration{}, err
+		return entity.DeviceConfigurationMessage{}, err
 	}
 
 	return configurationModel2Entity(data), nil

@@ -41,6 +41,20 @@ func (l *NumExpr) Accept(a *AST) value {
 	return a.visitNumExpr(l)
 }
 
+// UnaryExpr
+type UnaryExpr struct {
+	Op    Token
+	Right Expr
+}
+
+func (u *UnaryExpr) String() string {
+	return u.Op.String() + u.Right.String()
+}
+
+func (u *UnaryExpr) Accept(a *AST) value {
+	return a.visitUnaryExpr(u)
+}
+
 // ValueExpr is an expression like 100Gib
 type ValueExpr struct {
 	Left  Expr
@@ -71,4 +85,32 @@ func (c *CompExpr) String() string {
 
 func (c *CompExpr) Accept(a *AST) value {
 	return a.visitComprExpr(c)
+}
+
+// LogicExpr is an expression like x > 0 && y == 1
+type LogicExpr struct {
+	Left  Expr
+	Op    Token
+	Right Expr
+}
+
+func (l *LogicExpr) String() string {
+	return fmt.Sprintf("( %s %s %s )", l.Left.String(), l.Op.String(), l.Right.String())
+}
+
+func (l *LogicExpr) Accept(a *AST) value {
+	return a.visitLogicExpr(l)
+}
+
+// GroupExpr is an expression like ( x == 2 )
+type GroupExpr struct {
+	Expr Expr
+}
+
+func (g *GroupExpr) String() string {
+	return fmt.Sprintf("%s", g.Expr.String())
+}
+
+func (l *GroupExpr) Accept(a *AST) value {
+	return a.visitGroupExpr(l)
 }

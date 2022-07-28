@@ -47,6 +47,8 @@ func (i *Interpreter) evaluate(variables map[string]interface{}) (result bool, e
 	a := newAst(variables)
 	v := i.expr.Accept(a)
 
+	fmt.Printf("****** %s\n", i.expr.String())
+
 	if v.typ != typeBool {
 		return false, newEvaluationError(i.expr, "expected bool value. actual '%v'", v.typ)
 	}

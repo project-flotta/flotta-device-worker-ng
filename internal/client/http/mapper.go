@@ -5,10 +5,10 @@ import (
 
 	"github.com/go-openapi/strfmt"
 	"github.com/project-flotta/flotta-operator/models"
-	"github.com/tupyy/device-worker-ng/internal/entities"
+	"github.com/tupyy/device-worker-ng/internal/entity"
 )
 
-func enrolInfoEntity2Model(e entities.EnrolementInfo) models.EnrolmentInfo {
+func enrolInfoEntity2Model(e entity.EnrolementInfo) models.EnrolmentInfo {
 	m := models.EnrolmentInfo{}
 
 	m.TargetNamespace = &e.TargetNamespace
@@ -21,7 +21,7 @@ func enrolInfoEntity2Model(e entities.EnrolementInfo) models.EnrolmentInfo {
 	return m
 }
 
-func registerInfoEntity2Model(e entities.RegistrationInfo) models.RegistrationInfo {
+func registerInfoEntity2Model(e entity.RegistrationInfo) models.RegistrationInfo {
 	h := hardwareEntity2Model(e.Hardware)
 	return models.RegistrationInfo{
 		CertificateRequest: e.CertificateRequest,
@@ -29,7 +29,7 @@ func registerInfoEntity2Model(e entities.RegistrationInfo) models.RegistrationIn
 	}
 }
 
-func hardwareEntity2Model(e entities.HardwareInfo) models.HardwareInfo {
+func hardwareEntity2Model(e entity.HardwareInfo) models.HardwareInfo {
 
 	m := models.HardwareInfo{
 		Boot: &models.Boot{
@@ -149,7 +149,7 @@ func hardwareEntity2Model(e entities.HardwareInfo) models.HardwareInfo {
 	return m
 }
 
-func heartbeatEntity2Model(e entities.Heartbeat) models.Heartbeat {
+func heartbeatEntity2Model(e entity.Heartbeat) models.Heartbeat {
 	hardware := hardwareEntity2Model(*e.Hardware)
 
 	m := models.Heartbeat{
@@ -188,16 +188,41 @@ func heartbeatEntity2Model(e entities.Heartbeat) models.Heartbeat {
 	return m
 }
 
-func configurationModel2Entity(m models.DeviceConfiguration) entities.DeviceConfiguration {
-	e := entities.DeviceConfiguration{
-		Heartbeat: entities.HeartbeatConfiguration{
-			HardwareProfile: entities.HardwareProfileConfiguration{
-				Include: m.Heartbeat.HardwareProfile.Include,
-				Scope:   entities.FullScope,
+func configurationModel2Entity(m models.DeviceConfigurationMessage) entity.DeviceConfigurationMessage {
+	e := entity.DeviceConfiguration{
+		Heartbeat: entity.HeartbeatConfiguration{
+			HardwareProfile: entity.HardwareProfileConfiguration{
+				Include: m.Configuration.Heartbeat.HardwareProfile.Include,
+				Scope:   entity.FullScope,
 			},
-			Period: time.Duration(int(m.Heartbeat.PeriodSeconds) * int(time.Second)),
+			Period: time.Duration(int(m.Configuration.Heartbeat.PeriodSeconds) * int(time.Second)),
 		},
 	}
 
-	return e
+	workloads := make([]entity.Workload, 0, len(m.Workloads))
+	for _, w := range m.Workloads {
+		podWorkload := entity.PodWorkload{
+			Name:          w.Name,
+			Namespace:     w.Namespace,
+			Annotations:   w.Annotations,
+			Configmaps:    w.Configmaps,
+			Labels:        w.Labels,
+			Specification: w.Specification,
+		}
+
+		if w.ImageRegistries != nil {
+			podWorkload.ImageRegistryAuth = w.ImageRegistries.AuthFile
+		}
+
+		workloads = append(workloads, podWorkload)
+	}
+
+	deviceConf := entity.DeviceConfigurationMessage{
+		Configuration:               e,
+		DeviceID:                    m.DeviceID,
+		Workloads:                   workloads,
+		WorkloadsMonitoringInterval: time.Duration(int(m.WorkloadsMonitoringInterval) * int(time.Second)),
+	}
+
+	return deviceConf
 }

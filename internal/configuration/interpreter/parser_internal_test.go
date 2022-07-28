@@ -44,6 +44,16 @@ func testParser(t *testing.T) {
 			hasError: false,
 		},
 		{
+			test:     "cpu == 23% || x < 2 || y == 2",
+			expected: "( ( ( cpu == 23 % ) || ( x < 2 ) ) || ( y == 2 ) )",
+			hasError: false,
+		},
+		{
+			test:     "x == 2 && cpu == 23% || x < 2",
+			expected: "( ( ( x == 2 ) && ( cpu == 23 % ) ) || ( x < 2 ) )",
+			hasError: false,
+		},
+		{
 			test:     "cpu == 23% && mem >= 20Gib",
 			expected: "( ( cpu == 23 % ) && ( mem >= 20 Gib ) )",
 			hasError: false,
@@ -54,8 +64,18 @@ func testParser(t *testing.T) {
 			hasError: false,
 		},
 		{
-			test:     "(cpu == 23% && mem >= 20Gib) || x<=20",
-			expected: "( ( ( cpu == 23 % ) && ( mem >= 20 Gib ) ) || ( x <= 20 ) )",
+			test:     "(cpu == 23% && mem >= 20Gib) && x<=20",
+			expected: "( ( ( cpu == 23 % ) && ( mem >= 20 Gib ) ) && ( x <= 20 ) )",
+			hasError: false,
+		},
+		{
+			test:     " x == 2 && ( x == 2 && ( x == 2 && y == 0 ) )",
+			expected: "( ( x == 2 ) && ( ( x == 2 ) && ( ( x == 2 ) && ( y == 0 ) ) ) )",
+			hasError: false,
+		},
+		{
+			test:     " x == 2 || ( x == 2 || ( x == 2 || y == 0 ) )",
+			expected: "( ( x == 2 ) || ( ( x == 2 ) || ( ( x == 2 ) || ( y == 0 ) ) ) )",
 			hasError: false,
 		},
 		{
@@ -68,7 +88,11 @@ func testParser(t *testing.T) {
 			hasError: true,
 		},
 		{
-			test:     "name = 2 &&",
+			test:     "name == 2 &&",
+			hasError: true,
+		},
+		{
+			test:     "2 > name",
 			hasError: true,
 		},
 		{
@@ -77,7 +101,8 @@ func testParser(t *testing.T) {
 		},
 		{
 			test:     "2 > 2",
-			hasError: true,
+			expected: "( 2 > 2 )",
+			hasError: false,
 		},
 	}
 

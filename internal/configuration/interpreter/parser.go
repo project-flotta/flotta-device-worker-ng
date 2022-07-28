@@ -1,10 +1,13 @@
 // Grammar
 //
-// expression: comparison | comparison ( ("&&" | "||") comparison)*					;
-// comparison: literal ( ("==" | "<" | "<=" | ">" | ">=" ) value )*					;
-// value: numerical literal																;
-// numerical: "-"? NUMBER																;
-// literal: STRING																	;
+// expression:		or
+// or:				and | and ( "||" and)*										;
+// and:				comparison | comparison( "&&" comparison)*					; x < 2 == y > 3 && w == 2 && z == 2
+// comparison:		primary ("==" | "!=" | "<" | "<=" | ">" | ">=" ) value		; remark: normally equality has lower precedence than comparison but in our context we don't care about that
+//																				; we don't accept expression like x > 2 == y > 2 == z > 3. There are not useful for our usecase.
+// value:			unary | unary primary										; used as value + unit of measure like: 2.2Gib
+// unary:			( "-" ) primary	| primary									; could be 2, 2.2, -2.2
+// primary:			STRING | NUMBER | "( expression )"							; cpu123, cpu_123
 
 package interpreter
 
@@ -34,7 +37,7 @@ type parser struct {
 	val   string // string value of last token (or "")
 }
 
-func parse(src []byte) (expr *CompExpr, err error) {
+func parse(src []byte) (expr Expr, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			// Convert to ParseError or re-panic
@@ -47,123 +50,121 @@ func parse(src []byte) (expr *CompExpr, err error) {
 	p.next() // initialize p.tok
 
 	// parse the expression
-	expr = p.expression().(*CompExpr)
+	expr = p.or()
 
 	return
 }
 
-// Parse an expression
-//
-// expression: comparison | comparison ( ("&&" | "||") comparison)*
-//
 func (p *parser) expression() Expr {
+	return p.or()
+}
+
+func (p *parser) or() Expr {
 	var expr Expr
+	expr = p.and()
 
-	if p.matches(LPAREN) {
+	for p.matches(OR) {
 		p.next()
-		expr = p.expression()
-		p.consume(RPAREN, "expected ')' after expression")
-	} else {
-		expr = p.comparison()
-	}
-
-	if !p.matches(AND, OR) && !p.matches(EOL, RPAREN) {
-		panic(p.errorf("unexpected expression after '%s'", p.tok))
-	}
-
-	for p.matches(AND, OR) {
-		op := p.tok
-		p.next()
-
-		var right Expr
-		if p.matches(LPAREN) {
-			p.next()
-			right = p.expression()
-			p.consume(RPAREN, "expected ')' after expression")
-		} else {
-			right = p.comparison()
-		}
-
-		expr = &CompExpr{Left: expr, Op: op, Right: right}
+		right := p.and()
+		expr = &LogicExpr{expr, OR, right}
 	}
 
 	return expr
 }
 
-// Parse equality expression
+// Parse and expression
 //
-// comparison: literal ( ("==" | "<" | "<=" | ">" | ">=" ) value )*
-//
-func (p *parser) comparison() Expr {
-	expr := &CompExpr{Left: p.literal()}
+func (p *parser) and() Expr {
+	var expr Expr
 
-	switch p.tok {
-	case GREATER, GTE, LESS, LTE, EQUALS, NOT_EQUALS:
-		expr.Op = p.tok
+	expr = p.compare()
+
+	for p.matches(AND) {
 		p.next()
-	default:
-		panic(p.errorf("expected comparison operator instead of %s", p.tok))
-
+		right := p.compare()
+		expr = &LogicExpr{expr, AND, right}
+		return expr
 	}
 
-	expr.Right = p.value()
+	if !p.matches(OR, RPAREN, EOL) {
+		panic(p.errorf("expecting OR RPAREN or EOL instead of '%s'", p.tok))
+	}
+
+	return expr
+}
+
+// Parse compare expression
+//
+// compare: primary ("==" | "<" | "<=" | ">" | ">=" ) value
+//
+func (p *parser) compare() Expr {
+	expr := p.primary()
+
+	if p.matches(GREATER, GTE, LESS, LTE, EQUALS, NOT_EQUALS) {
+		op := p.tok
+		p.next()
+		right := p.value()
+		expr = &CompExpr{expr, op, right}
+	}
 
 	return expr
 }
 
 // Parse a value
 func (p *parser) value() Expr {
-	left := p.numerical()
+	expr := p.unary()
 
-	var right Expr
-	if p.tok == STRING {
-		right = p.literal()
+	if p.matches(STRING) {
+		e := &ValueExpr{Left: expr}
+		e.Right = p.primary()
+
+		return e
 	}
-
-	return &ValueExpr{left, right}
-}
-
-// Parse literal
-//
-// STRING
-//
-func (p *parser) literal() Expr {
-	var expr Expr
-
-	p.expect(STRING)
-
-	expr = &LiteralExpr{p.val}
-
-	p.next()
 
 	return expr
 }
 
-func (p *parser) numerical() Expr {
-	if p.tok != DEC && p.tok != NUMBER {
-		panic(p.errorf("expected '-' or number instead of %s", p.tok))
-	}
-
-	isNegative := false
-	if p.tok == DEC {
-		isNegative = true
+func (p *parser) unary() Expr {
+	if p.matches(DEC) {
+		expr := &UnaryExpr{Op: p.tok}
 		p.next()
+
+		p.expect(NUMBER)
+		expr.Right = p.primary()
+
+		return expr
 	}
 
 	p.expect(NUMBER)
 
-	value, err := strconv.ParseFloat(p.val, 64)
-	if err != nil {
-		panic(p.errorf("expected number instead of '%s'", p.val))
+	return p.primary()
+}
+
+func (p *parser) primary() Expr {
+	if p.matches(STRING) {
+		val := p.val
+		p.next()
+		return &LiteralExpr{val}
 	}
 
-	if isNegative {
-		value = -1 * value
+	if p.matches(NUMBER) {
+		value, err := strconv.ParseFloat(p.val, 64)
+		if err != nil {
+			panic(p.errorf("expected number instead of '%s'", p.val))
+		}
+		p.next()
+		return &NumExpr{value}
 	}
 
-	p.next()
+	if p.matches(LPAREN) {
+		p.next()
+		expr := p.expression()
+		p.consume(RPAREN, "expect ')' after expression")
 
-	return &NumExpr{value}
+		return &GroupExpr{expr}
+	}
+
+	panic(p.errorf("unknown token '%s'", p.tok))
 }
 
 // Parse next token into p.tok (and set p.pos and p.val).
@@ -183,6 +184,10 @@ func (p *parser) matches(operators ...Token) bool {
 		}
 	}
 	return false
+}
+
+func (p *parser) check(tok Token) bool {
+	return p.tok == tok
 }
 
 // Ensure current token is tok, and parse next token into p.tok.

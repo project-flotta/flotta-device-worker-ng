@@ -4,11 +4,14 @@ go 1.18
 
 require (
 	github.com/denisbrodbeck/machineid v1.0.1
+	github.com/go-openapi/strfmt v0.21.2
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.2.0
+	github.com/onsi/gomega v1.19.0
 	github.com/openshift/assisted-installer-agent v1.0.10-0.20211027185717-53b0eacfa147
-	github.com/project-flotta/flotta-operator v0.1.1-0.20220614071637-fe100a1eaa74
+	github.com/project-flotta/flotta-operator v0.2.0
 	github.com/spf13/cobra v1.5.0
+	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.12.0
 	go.uber.org/zap v1.21.0
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
@@ -26,9 +29,7 @@ require (
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.20.0 // indirect
 	github.com/go-openapi/loads v0.21.1 // indirect
-	github.com/go-openapi/runtime v0.24.1 // indirect
 	github.com/go-openapi/spec v0.20.6 // indirect
-	github.com/go-openapi/strfmt v0.21.2 // indirect
 	github.com/go-openapi/swag v0.21.1 // indirect
 	github.com/go-openapi/validate v0.22.0 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
@@ -45,9 +46,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/onsi/ginkgo v1.16.5 // indirect
-	github.com/onsi/gomega v1.19.0 // indirect
 	github.com/openshift/assisted-service v1.0.10-0.20210929010224-72700cdbd088 // indirect
-	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -56,7 +55,6 @@ require (
 	github.com/spf13/afero v1.8.2 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/ssgreg/journald v1.0.0 // indirect
 	github.com/stretchr/objx v0.4.0 // indirect
 	github.com/stretchr/testify v1.7.5 // indirect

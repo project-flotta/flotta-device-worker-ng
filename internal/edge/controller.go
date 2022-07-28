@@ -8,7 +8,7 @@ import (
 	config "github.com/tupyy/device-worker-ng/configuration"
 	"github.com/tupyy/device-worker-ng/internal/certificate"
 	"github.com/tupyy/device-worker-ng/internal/configuration"
-	"github.com/tupyy/device-worker-ng/internal/entities"
+	"github.com/tupyy/device-worker-ng/internal/entity"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
@@ -16,17 +16,17 @@ import (
 //go:generate mockgen -package=edge -destination=mock_client.go --build_flags=--mod=mod . Client
 type Client interface {
 	// Enrol sends the enrolment information.
-	Enrol(ctx context.Context, deviceID string, info entities.EnrolementInfo) error
+	Enrol(ctx context.Context, deviceID string, info entity.EnrolementInfo) error
 
 	// Register sends the registration info.
 	// Registration info is actually a csr which will be signed by the operator and send back with the response.
-	Register(ctx context.Context, deviceID string, registerInfo entities.RegistrationInfo) (entities.RegistrationResponse, error)
+	Register(ctx context.Context, deviceID string, registerInfo entity.RegistrationInfo) (entity.RegistrationResponse, error)
 
 	// Heartbeat
-	Heartbeat(ctx context.Context, deviceID string, heartbeat entities.Heartbeat) error
+	Heartbeat(ctx context.Context, deviceID string, heartbeat entity.Heartbeat) error
 
 	// GetConfiguration get the configuration from flotta-operator
-	GetConfiguration(ctx context.Context, deviceID string) (entities.DeviceConfiguration, error)
+	GetConfiguration(ctx context.Context, deviceID string) (entity.DeviceConfigurationMessage, error)
 }
 
 type Controller struct {
@@ -63,15 +63,15 @@ func (c *Controller) run() {
 		configuration = make(chan time.Duration, 1)
 	)
 
-	ticker := time.NewTicker(c.confManager.Configuration().Heartbeat.Period)
+	ticker := time.NewTicker(c.confManager.Configuration().Configuration.Heartbeat.Period)
 
 	for {
 		select {
 		case <-enrol:
 			zap.S().Info("Enrolling device")
 
-			enrolInfo := entities.EnrolementInfo{
-				Features: entities.EnrolmentInfoFeatures{
+			enrolInfo := entity.EnrolementInfo{
+				Features: entity.EnrolmentInfoFeatures{
 					Hardware: c.confManager.GetHardwareInfo(),
 				},
 				TargetNamespace: config.GetTargetNamespace(),
@@ -95,7 +95,7 @@ func (c *Controller) run() {
 				break
 			}
 
-			registerInfo := entities.RegistrationInfo{
+			registerInfo := entity.RegistrationInfo{
 				CertificateRequest: string(csr),
 				Hardware:           c.confManager.GetHardwareInfo(),
 			}
@@ -137,18 +137,18 @@ func (c *Controller) run() {
 			})
 
 			g.Go(func() error {
-				newConfiguration, err := c.client.GetConfiguration(ctx, config.GetDeviceID())
+				configurationMessage, err := c.client.GetConfiguration(ctx, config.GetDeviceID())
 				if err != nil {
 					return fmt.Errorf("cannot get configuration '%w'", err)
 				}
 
 				// reset the ticker if the heartbeat period changed.
-				if newConfiguration.Heartbeat.Period != c.confManager.Configuration().Heartbeat.Period {
-					zap.S().Infof("new heartbeat period: %s", newConfiguration.Heartbeat.Period)
-					configuration <- newConfiguration.Heartbeat.Period
+				if configurationMessage.Configuration.Heartbeat.Period != c.confManager.Configuration().Configuration.Heartbeat.Period {
+					zap.S().Infof("new heartbeat period: %s", configurationMessage.Configuration.Heartbeat.Period)
+					configuration <- configurationMessage.Configuration.Heartbeat.Period
 				}
 
-				c.confManager.SetConfiguration(newConfiguration)
+				c.confManager.SetConfiguration(configurationMessage)
 
 				return nil
 			})
