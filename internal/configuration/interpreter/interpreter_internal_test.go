@@ -169,7 +169,7 @@ func TestInterpreter(t *testing.T) {
 				return
 			}
 
-			res, err := intr.evaluate(data.variables)
+			res, err := intr.Evaluate(data.variables)
 			if !data.hasError && err != nil {
 				t.Errorf("evaluation error: %v", err)
 				return

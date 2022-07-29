@@ -12,11 +12,11 @@ const (
 type value struct {
 	typ valueType // Type of value
 	b   bool      // Bool value
-	n   float64   // Numeric value (for typeNum)
+	n   float32   // Numeric value (for typeNum)
 }
 
 // Create a new number value
-func num(n float64) value {
+func num(n float32) value {
 	return value{typ: typeNum, n: n}
 }
 

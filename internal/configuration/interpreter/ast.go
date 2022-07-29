@@ -77,7 +77,7 @@ func (a *AST) visitLiteralExpr(e *LiteralExpr) value {
 	switch vv := v.(type) {
 	case bool:
 		return boolean(vv)
-	case float64:
+	case float32:
 		return num(vv)
 	case int:
 		return num(float64(vv))

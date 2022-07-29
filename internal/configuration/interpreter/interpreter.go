@@ -37,7 +37,7 @@ func NewInterpreter(expression string) (*Interpreter, error) {
 }
 
 // evaluate evaluates the expression to bool.
-func (i *Interpreter) evaluate(variables map[string]interface{}) (result bool, err error) {
+func (i *Interpreter) Evaluate(variables map[string]interface{}) (result bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = r.(*EvaluationError)
