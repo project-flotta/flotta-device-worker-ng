@@ -26,11 +26,11 @@ func (l *LiteralExpr) Accept(a *AST) value {
 
 // NumExpr is an expression like 1234.
 type NumExpr struct {
-	Value float64
+	Value float32
 }
 
 func (p *NumExpr) String() string {
-	if p.Value == float64(int(p.Value)) {
+	if p.Value == float32(int(p.Value)) {
 		return strconv.Itoa(int(p.Value))
 	} else {
 		return fmt.Sprintf("%.6g", p.Value)

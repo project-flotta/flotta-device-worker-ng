@@ -80,7 +80,7 @@ func (a *AST) visitLiteralExpr(e *LiteralExpr) value {
 	case float32:
 		return num(vv)
 	case int:
-		return num(float64(vv))
+		return num(float32(vv))
 	default:
 		panic(newEvaluationError(e, "variable '%s' has the wrong type", e.Name))
 	}

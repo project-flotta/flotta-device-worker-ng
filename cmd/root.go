@@ -14,6 +14,7 @@ import (
 	httpClient "github.com/tupyy/device-worker-ng/internal/client/http"
 	"github.com/tupyy/device-worker-ng/internal/configuration"
 	"github.com/tupyy/device-worker-ng/internal/edge"
+	"github.com/tupyy/device-worker-ng/internal/state"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -46,15 +47,15 @@ var rootCmd = &cobra.Command{
 			panic(err)
 		}
 
-		// httpClient is a wrapper around yggdrasil http client.
+		// httpClient is a wrapper around http client which implements yggdrasil API.
 		httpClient, err := httpClient.New(config.GetServerAddress(), certManager)
 		if err != nil {
 			panic(err)
 		}
 
 		confManager := configuration.New()
-
 		controller := edge.New(httpClient, confManager, certManager)
+		stateManager := state.New(confManager.ProfileCh)
 
 		done := make(chan os.Signal, 1)
 		signal.Notify(done, os.Interrupt, os.Kill)
@@ -62,6 +63,7 @@ var rootCmd = &cobra.Command{
 		<-done
 
 		controller.Shutdown()
+		stateManager.Shutdown()
 
 	},
 }
