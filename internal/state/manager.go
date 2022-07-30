@@ -13,20 +13,20 @@ type MetricServer interface {
 	Shutdown(ctx context.Context) error
 }
 
-type ProfileProcessor interface {
+type Evaluator interface {
 	AddValue(newValue metricValue)
 	// Evaluate returns a map with profiles which changed state
 	// the key is the profile name and value the new state
-	Evaluate() map[string]string
+	Evaluate() (map[string]string, error)
 }
 
 type Manager struct {
 	// profile condition updates are written to this channel
 	OutputCh chan map[string]string
 
-	// profileProcessor try to determine if a profile changed state
+	// profileEvaluator try to determine if a profile changed state
 	// after each new metricValue
-	profileProcessor ProfileProcessor
+	profileEvaluator Evaluator
 
 	deviceProfiles map[string]entity.DeviceProfile
 	recv           chan entity.Option[map[string]entity.DeviceProfile]
@@ -67,7 +67,7 @@ func (m *Manager) run(ctx context.Context) {
 			}
 
 			zap.S().Info("profile processor created")
-			m.profileProcessor = newProfileProcessor(opt.Value)
+			m.profileEvaluator = newProfileEvaluator(opt.Value)
 
 			if m.metricServer == nil {
 				zap.S().Info("metric server started")
@@ -75,21 +75,21 @@ func (m *Manager) run(ctx context.Context) {
 				metricChannel = m.metricServer.OutputChannel()
 			}
 		case metricValue := <-metricChannel:
-			if m.profileProcessor == nil {
+			if m.profileEvaluator == nil {
 				break
 			}
 
 			zap.S().Debugw("new metric received", "value", metricValue)
-			m.profileProcessor.AddValue(metricValue)
-			// to avoid flooding the processor with values, the processor buffers the state changes before sending the updates
-			// this is the reason why we have a ticker here.
+			m.profileEvaluator.AddValue(metricValue)
 		case <-ticker.C:
-			if m.profileProcessor == nil {
+			// to avoid flooding the processor with values, the processor buffers the state changes
+			// before sending the updates. This is the reason why we have a ticker here.
+			if m.profileEvaluator == nil {
 				break
 			}
-			updates := m.profileProcessor.Evaluate()
-			if len(updates) > 0 {
-				m.OutputCh <- updates
+			results, err := m.profileEvaluator.Evaluate()
+			if err != nil {
+				m.OutputCh <- results
 			}
 		case <-ctx.Done():
 			return

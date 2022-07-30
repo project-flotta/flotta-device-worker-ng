@@ -84,7 +84,6 @@ func (m *metricServer) handler() func(w http.ResponseWriter, r *http.Request) {
 			m.outCh <- data
 			atomic.AddInt32(&m.count, -1)
 		}()
-
 		w.WriteHeader(http.StatusOK)
 	}
 }
