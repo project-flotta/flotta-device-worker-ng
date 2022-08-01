@@ -59,9 +59,11 @@ func (m *Manager) run(ctx context.Context) {
 			// if map empty stop the metric server
 			if opt.None {
 				if m.metricServer != nil {
-					zap.S().Info("stopping metric server")
 					m.metricServer.Shutdown(context.Background())
 					metricChannel = nil
+					// stop the ticker since we don't have profiles anymore
+					ticker.Stop()
+					zap.S().Info("metric server stopped")
 				}
 				break
 			}
@@ -70,23 +72,15 @@ func (m *Manager) run(ctx context.Context) {
 			m.profileEvaluator = newProfileEvaluator(opt.Value)
 
 			if m.metricServer == nil {
-				zap.S().Info("metric server started")
 				m.metricServer = newMetricServer()
 				metricChannel = m.metricServer.OutputChannel()
+				ticker.Reset(2 * time.Second)
+				zap.S().Info("metric server started")
 			}
 		case metricValue := <-metricChannel:
-			if m.profileEvaluator == nil {
-				break
-			}
-
 			zap.S().Debugw("new metric received", "value", metricValue)
 			m.profileEvaluator.AddValue(metricValue)
 		case <-ticker.C:
-			// to avoid flooding the processor with values, the processor buffers the state changes
-			// before sending the updates. This is the reason why we have a ticker here.
-			if m.profileEvaluator == nil {
-				break
-			}
 			results, err := m.profileEvaluator.Evaluate()
 			if err != nil {
 				m.OutputCh <- results
@@ -98,10 +92,8 @@ func (m *Manager) run(ctx context.Context) {
 }
 
 func (m *Manager) Shutdown() {
-	m.cancelFunc()
-
-	if m.metricServer == nil {
-		return
+	if m.metricServer != nil {
+		m.metricServer.Shutdown(context.Background())
 	}
-	m.metricServer.Shutdown(context.Background())
+	m.cancelFunc()
 }
