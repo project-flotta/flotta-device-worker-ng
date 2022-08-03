@@ -50,7 +50,7 @@ func parse(src []byte) (expr Expr, err error) {
 	p.next() // initialize p.tok
 
 	// parse the expression
-	expr = p.or()
+	expr = p.expression()
 
 	return
 }
@@ -141,30 +141,26 @@ func (p *parser) unary() Expr {
 }
 
 func (p *parser) primary() Expr {
-	if p.matches(STRING) {
+	switch p.tok {
+	case STRING:
 		val := p.val
 		p.next()
 		return &LiteralExpr{val}
-	}
-
-	if p.matches(NUMBER) {
-		value, err := strconv.ParseFloat(p.val, 64)
+	case NUMBER:
+		value, err := strconv.ParseFloat(p.val, 32)
 		if err != nil {
 			panic(p.errorf("expected number instead of '%s'", p.val))
 		}
 		p.next()
-		return &NumExpr{value}
-	}
-
-	if p.matches(LPAREN) {
+		return &NumExpr{float32(value)}
+	case LPAREN:
 		p.next()
 		expr := p.expression()
 		p.consume(RPAREN, "expect ')' after expression")
-
 		return &GroupExpr{expr}
+	default:
+		panic(p.errorf("unknown token '%s'", p.tok))
 	}
-
-	panic(p.errorf("unknown token '%s'", p.tok))
 }
 
 // Parse next token into p.tok (and set p.pos and p.val).
