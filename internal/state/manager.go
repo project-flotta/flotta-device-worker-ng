@@ -13,20 +13,24 @@ type MetricServer interface {
 	Shutdown(ctx context.Context) error
 }
 
+type EvaluationResult entity.Result[map[string]bool]
+
 type Evaluator interface {
+	SetProfiles(profiles map[string]entity.DeviceProfile)
 	AddValue(newValue metricValue)
-	// Evaluate returns a map with profiles which changed state
-	// the key is the profile name and value the new state
-	Evaluate() (map[string]string, error)
+	// Evaluate returns list of results for each profile.
+	// The result is a map having as key the name of the profile and the result as value.
+	// If the profile expression evaluates with error, the error in Result is set accordantly.
+	Evaluate() []EvaluationResult
 }
 
 type Manager struct {
 	// profile condition updates are written to this channel
-	OutputCh chan map[string]string
+	OutputCh chan []EvaluationResult
 
 	// profileEvaluator try to determine if a profile changed state
 	// after each new metricValue
-	profileEvaluator Evaluator
+	profilesEvaluator Evaluator
 
 	deviceProfiles map[string]entity.DeviceProfile
 	recv           chan entity.Option[map[string]entity.DeviceProfile]
@@ -34,13 +38,24 @@ type Manager struct {
 	metricServer   MetricServer
 }
 
+// New returns a new state manager with the default evaluator
 func New(recv chan entity.Option[map[string]entity.DeviceProfile]) *Manager {
+	return _new(recv, &simpleEvaluator{})
+}
+
+// NewWithEvaluator returns a new state manager with the provided evaluator
+func NewWithEvaluator(recv chan entity.Option[map[string]entity.DeviceProfile], e Evaluator) *Manager {
+	return _new(recv, e)
+}
+
+func _new(recv chan entity.Option[map[string]entity.DeviceProfile], evaluator Evaluator) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	m := &Manager{
-		OutputCh:   make(chan map[string]string),
-		recv:       recv,
-		cancelFunc: cancel,
+		OutputCh:          make(chan []EvaluationResult),
+		recv:              recv,
+		cancelFunc:        cancel,
+		profilesEvaluator: evaluator,
 	}
 
 	go m.run(ctx)
@@ -69,7 +84,7 @@ func (m *Manager) run(ctx context.Context) {
 			}
 
 			zap.S().Info("profile processor created")
-			m.profileEvaluator = newProfileEvaluator(opt.Value)
+			m.profilesEvaluator.SetProfiles(opt.Value)
 
 			if m.metricServer == nil {
 				m.metricServer = newMetricServer()
@@ -79,10 +94,12 @@ func (m *Manager) run(ctx context.Context) {
 			}
 		case metricValue := <-metricChannel:
 			zap.S().Debugw("new metric received", "value", metricValue)
-			m.profileEvaluator.AddValue(metricValue)
+			m.profilesEvaluator.AddValue(metricValue)
 		case <-ticker.C:
-			results, err := m.profileEvaluator.Evaluate()
-			if err != nil {
+			results := m.profilesEvaluator.Evaluate()
+			zap.S().DPanicw("evaluate profiles", "results", results)
+
+			if len(results) > 0 {
 				m.OutputCh <- results
 			}
 		case <-ctx.Done():

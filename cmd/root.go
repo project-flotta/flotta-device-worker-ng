@@ -5,6 +5,7 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"context"
 	"os"
 	"os/signal"
 
@@ -14,6 +15,8 @@ import (
 	httpClient "github.com/tupyy/device-worker-ng/internal/client/http"
 	"github.com/tupyy/device-worker-ng/internal/configuration"
 	"github.com/tupyy/device-worker-ng/internal/edge"
+	"github.com/tupyy/device-worker-ng/internal/executor"
+	"github.com/tupyy/device-worker-ng/internal/scheduler"
 	"github.com/tupyy/device-worker-ng/internal/state"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -54,14 +57,24 @@ var rootCmd = &cobra.Command{
 		}
 
 		confManager := configuration.New()
+		executor, err := executor.New()
+		if err != nil {
+			panic(err)
+		}
+
 		controller := edge.New(httpClient, confManager, certManager)
 		stateManager := state.New(confManager.ProfileCh)
+		scheduler := scheduler.New(executor)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		scheduler.Start(ctx, confManager.TaskCh)
 
 		done := make(chan os.Signal, 1)
 		signal.Notify(done, os.Interrupt, os.Kill)
 
 		<-done
 
+		cancel()
 		controller.Shutdown()
 		stateManager.Shutdown()
 
