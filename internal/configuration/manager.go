@@ -61,8 +61,18 @@ func (c *Manager) SetConfiguration(e entity.DeviceConfigurationMessage) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	c.TaskCh <- c.createTasks(c.conf)
+	// send task to scheduler
+	o := entity.Option[[]entity.Task]{
+		Value: c.conf.Tasks,
+	}
 
+	if len(c.conf.Tasks) == 0 {
+		o.None = true
+	}
+
+	c.TaskCh <- o
+
+	// send profiles to state manager
 	if deviceProfiles, err := c.createDeviceProfiles(c.conf); err != nil {
 		zap.S().Errorw("cannot parse profiles", "error", err)
 	} else {
@@ -75,14 +85,6 @@ func (c *Manager) SetConfiguration(e entity.DeviceConfigurationMessage) {
 func (c *Manager) Heartbeat() entity.Heartbeat {
 	return entity.Heartbeat{
 		Hardware: &c.hardware,
-	}
-}
-
-// createTasks creates a list of task from workload definition
-func (c *Manager) createTasks(conf entity.DeviceConfigurationMessage) entity.Option[[]entity.Task] {
-	return entity.Option[[]entity.Task]{
-		Value: []entity.Task{},
-		None:  true,
 	}
 }
 

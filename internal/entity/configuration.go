@@ -19,7 +19,7 @@ type DeviceConfigurationMessage struct {
 	Version string
 
 	// list of workloads
-	Workloads []Workload
+	Tasks []Task
 
 	// Defines the interval in seconds between the attempts to evaluate the workloads status and restart those that failed
 	// Minimum: > 0
@@ -33,8 +33,8 @@ func (m DeviceConfigurationMessage) String() string {
 	fmt.Fprintf(&sb, "version: %s\n", m.Version)
 	fmt.Fprintf(&sb, "workload monitoring interval: %s\n", m.WorkloadsMonitoringInterval)
 	fmt.Fprintf(&sb, "%s\n", m.Configuration.String())
-	for _, w := range m.Workloads {
-		fmt.Fprintf(&sb, "workload: %s\n", w.String())
+	for _, t := range m.Tasks {
+		fmt.Fprintf(&sb, "workload: %s\n", t.String())
 	}
 
 	return sb.String()

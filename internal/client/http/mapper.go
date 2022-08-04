@@ -220,8 +220,29 @@ func configurationModel2Entity(m models.DeviceConfigurationMessage) entity.Devic
 	deviceConf := entity.DeviceConfigurationMessage{
 		Configuration:               e,
 		DeviceID:                    m.DeviceID,
-		Workloads:                   workloads,
 		WorkloadsMonitoringInterval: time.Duration(int(m.WorkloadsMonitoringInterval) * int(time.Second)),
+	}
+
+	deviceConf.Tasks = make([]entity.Task, 0, len(m.Workloads))
+	for _, w := range m.Workloads {
+		pod := entity.PodWorkload{
+			Name:          w.Name,
+			Namespace:     w.Namespace,
+			Specification: w.Specification,
+			Labels:        w.Labels,
+			Annotations:   w.Annotations,
+		}
+
+		if w.ImageRegistries != nil {
+			pod.ImageRegistryAuth = w.ImageRegistries.AuthFile
+		}
+
+		pod.Configmaps = make([]string, 0, len(w.Configmaps))
+		for _, c := range w.Configmaps {
+			pod.Configmaps = append(pod.Configmaps, c)
+		}
+
+		deviceConf.Tasks = append(deviceConf.Tasks, entity.NewTask(w.Name, pod))
 	}
 
 	return deviceConf
