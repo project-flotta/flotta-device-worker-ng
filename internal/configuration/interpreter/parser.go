@@ -1,13 +1,13 @@
 // Grammar
 //
-// expression:		or
-// or:				and | and ( "||" and)*										;
-// and:				comparison | comparison( "&&" comparison)*					; x < 2 == y > 3 && w == 2 && z == 2
-// comparison:		primary ("==" | "!=" | "<" | "<=" | ">" | ">=" ) value		; remark: normally equality has lower precedence than comparison but in our context we don't care about that
-//																				; we don't accept expression like x > 2 == y > 2 == z > 3. There are not useful for our usecase.
-// value:			unary | unary primary										; used as value + unit of measure like: 2.2Gib
-// unary:			( "-" ) primary	| primary									; could be 2, 2.2, -2.2
-// primary:			STRING | NUMBER | "( expression )"							; cpu123, cpu_123
+// expression:      or
+// or:              and | and ( "||" and)*                                      ;
+// and:             comparison | comparison( "&&" comparison)*                  ; x < 2 == y > 3 && w == 2 && z == 2
+// comparison:      primary ("==" | "!=" | "<" | "<=" | ">" | ">=" ) value      ; remark: normally equality has lower precedence than comparison but in our context we don't care about that
+//                                                                              ; we don't accept expression like x > 2 == y > 2 == z > 3. There are not useful for our usecase.
+// value:           unary | unary primary                                       ; used as value + unit of measure like: 2.2Gib
+// unary:           ( "-" ) primary	| primary; could be 2, 2.2, -2.2
+// primary:         STRING | NUMBER | "( expression )"                          ; cpu123, cpu_123
 
 package interpreter
 
