@@ -72,7 +72,7 @@ func (c *Controller) run() {
 
 			enrolInfo := entity.EnrolementInfo{
 				Features: entity.EnrolmentInfoFeatures{
-					Hardware: c.confManager.GetHardwareInfo(),
+					Hardware: c.confManager.HardwareInfo(),
 				},
 				TargetNamespace: config.GetTargetNamespace(),
 			}
@@ -97,7 +97,7 @@ func (c *Controller) run() {
 
 			registerInfo := entity.RegistrationInfo{
 				CertificateRequest: string(csr),
-				Hardware:           c.confManager.GetHardwareInfo(),
+				Hardware:           c.confManager.HardwareInfo(),
 			}
 
 			res, err := c.client.Register(context.TODO(), config.GetDeviceID(), registerInfo)

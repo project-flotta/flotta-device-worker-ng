@@ -21,7 +21,7 @@ type Evaluator interface {
 	// Evaluate returns list of results for each profile.
 	// The result is a map having as key the name of the profile and the result as value.
 	// If the profile expression evaluates with error, the error in Result is set accordantly.
-	Evaluate() []EvaluationResult
+	Evaluate() entity.Option[[]EvaluationResult]
 }
 
 type Manager struct {
@@ -96,12 +96,13 @@ func (m *Manager) run(ctx context.Context) {
 			zap.S().Debugw("new metric received", "value", metricValue)
 			m.profilesEvaluator.AddValue(metricValue)
 		case <-ticker.C:
-			results := m.profilesEvaluator.Evaluate()
-			zap.S().DPanicw("evaluate profiles", "results", results)
-
-			if len(results) > 0 {
-				m.OutputCh <- results
+			opt := m.profilesEvaluator.Evaluate()
+			if opt.None {
+				break
 			}
+
+			zap.S().Debugw("evaluate profiles", "results", opt.Value)
+			m.OutputCh <- opt.Value
 		case <-ctx.Done():
 			return
 		}

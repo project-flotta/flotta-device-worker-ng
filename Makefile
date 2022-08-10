@@ -44,7 +44,7 @@ ifeq (, $(shell which mockgen))
 endif
 	@exit
 
-generate: generate-tools
+generate: generate.tools
 	go generate ./...
 
 GOVER = $(shell pwd)/bin/gover
@@ -68,7 +68,7 @@ gosec: ## Run gosec locally
 	$(DOCKER) run --rm -it -v $(PWD):/opt/data/:z docker.io/securego/gosec -exclude-generated /opt/data/...
 
 test: ## Run unit test on device worker
-test: test-tools
+test: test.tools
 	$(GINKGO) --race -r $(GINKGO_OPTIONS) ./internal/* ./cmd/*
 
 TEST_IMAGE_NAME ?= device-worker-test

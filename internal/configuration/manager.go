@@ -24,10 +24,10 @@ var (
 )
 
 type Manager struct {
-	// TaskCh is the channel where task are sent
-	TaskCh chan entity.Option[[]entity.Task]
-	// ProfileCh is the channel where device profiles are sent
-	ProfileCh chan entity.Option[map[string]entity.DeviceProfile]
+	// SchedulerCh is the channel to communicate with the scheduler
+	SchedulerCh chan entity.Message
+	// StateManagerCh is the channel to communicate with state manager
+	StateManagerCh chan entity.Message
 
 	conf     entity.DeviceConfigurationMessage
 	hardware entity.HardwareInfo
@@ -36,10 +36,10 @@ type Manager struct {
 
 func New() *Manager {
 	m := &Manager{
-		conf:      defaultConfiguration,
-		TaskCh:    make(chan entity.Option[[]entity.Task]),
-		ProfileCh: make(chan entity.Option[map[string]entity.DeviceProfile]),
-		hardware:  NewHardwareInfo(nil).GetHardwareInformation(),
+		conf:           defaultConfiguration,
+		SchedulerCh:    make(chan entity.Message),
+		StateManagerCh: make(chan entity.Message),
+		hardware:       NewHardwareInfo(nil).GetHardwareInformation(),
 	}
 
 	return m
@@ -62,21 +62,24 @@ func (c *Manager) SetConfiguration(e entity.DeviceConfigurationMessage) {
 	defer c.lock.Unlock()
 
 	// send task to scheduler
-	o := entity.Option[[]entity.Task]{
-		Value: c.conf.Tasks,
+	o := entity.Option[[]entity.Workload]{
+		Value: c.conf.Workloads,
 	}
 
-	if len(c.conf.Tasks) == 0 {
+	if len(c.conf.Workloads) == 0 {
 		o.None = true
 	}
 
-	c.TaskCh <- o
+	c.SchedulerCh <- entity.Message{
+		Kind:    entity.WorkloadConfigurationMessage,
+		Payload: o,
+	}
 
 	// send profiles to state manager
 	if deviceProfiles, err := c.createDeviceProfiles(c.conf); err != nil {
 		zap.S().Errorw("cannot parse profiles", "error", err)
 	} else {
-		c.ProfileCh <- deviceProfiles
+		c.StateManagerCh <- entity.Message{Kind: entity.ProfileConfigurationMessage, Payload: deviceProfiles}
 	}
 
 	c.conf = e

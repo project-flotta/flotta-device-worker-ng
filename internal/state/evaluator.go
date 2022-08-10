@@ -53,11 +53,14 @@ func (p *simpleEvaluator) AddValue(newValue metricValue) {
 
 // Evaluate return a list of results for each profile
 // each profile can be evaluated to bool or error if the there is a ExpressionError.
-func (p *simpleEvaluator) Evaluate() []EvaluationResult {
+func (p *simpleEvaluator) Evaluate() entity.Option[[]EvaluationResult] {
 	results := make([]EvaluationResult, 0, len(p.evaluators))
 	for _, e := range p.evaluators {
 		results = append(results, e.evaluate()...)
 	}
 
-	return results
+	return entity.Option[[]EvaluationResult]{
+		Value: results,
+		None:  len(results) == 0,
+	}
 }

@@ -15,9 +15,11 @@ const (
 )
 
 type Workload interface {
+	ID() string
 	Kind() WorkloadKind
 	String() string
 	Hash() string
+	Profiles() []WorkloadProfile
 }
 
 // PodWorkload represents the workload in form of a pod.
@@ -42,12 +44,22 @@ type PodWorkload struct {
 	// Workload labels
 	Labels map[string]string
 
+	WorkloadProfiles []WorkloadProfile
+
 	// specification
 	Specification string
 }
 
+func (p PodWorkload) ID() string {
+	return p.Name
+}
+
 func (p PodWorkload) Kind() WorkloadKind {
 	return PodKind
+}
+
+func (p PodWorkload) Profiles() []WorkloadProfile {
+	return p.WorkloadProfiles
 }
 
 func (p PodWorkload) String() string {
@@ -106,4 +118,9 @@ func (a AnsibleWorkload) String() string {
 func (a AnsibleWorkload) Hash() string {
 	sum := sha256.Sum256(bytes.NewBufferString(a.Playbook).Bytes())
 	return fmt.Sprintf("%x", sum)
+}
+
+type WorkloadProfile struct {
+	Name       string
+	Conditions []string
 }
