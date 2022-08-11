@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"context"
 	"fmt"
 	"sync"
 )
@@ -20,12 +19,11 @@ func (r Result[T]) IsPending() bool {
 }
 
 type Future[T any] struct {
-	input      chan T
-	done       bool
-	hasValue   bool
-	value      T
-	cancelFunc context.CancelFunc
-	lock       sync.Mutex
+	input    chan T
+	done     bool
+	hasValue bool
+	value    T
+	lock     sync.Mutex
 }
 
 func (f *Future[T]) Resolved() bool {
