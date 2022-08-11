@@ -21,10 +21,10 @@ const (
 	stopAction
 
 	// marks type
-	deletionMark  string = "deletion"
-	stopMark      string = "stop"
-	deployMark    string = "deploy"
-	disablingMark string = "disable"
+	deletion  string = "deletion"
+	stop      string = "stop"
+	deploy    string = "deploy"
+	disabling string = "disable"
 )
 
 //go:generate mockgen -package=scheduler -destination=mock_executor.go --build_flags=--mod=mod . Executor
@@ -104,8 +104,8 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileC
 				iter := s.tasks.Iter()
 				for iter.HasNext() {
 					task, _ := iter.Next()
-					if !s.isMarked(task, disablingMark) && (task.CurrentState() == TaskStateRunning || task.CurrentState() == TaskStateDeploying) {
-						s.mark(task, stopMark)
+					if !s.isMarked(task, disabling) && (task.CurrentState() == TaskStateRunning || task.CurrentState() == TaskStateDeploying) {
+						s.mark(task, stop)
 					}
 				}
 				break
@@ -120,8 +120,8 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileC
 					// something changed in the workload. Stop the old one and start the new one
 					zap.S().Infow("workload changed", "name", oldTask.Name)
 					// stop the old one and remove it from store
-					s.mark(oldTask, stopMark)
-					s.mark(oldTask, deletionMark)
+					s.mark(oldTask, stop)
+					s.mark(oldTask, deletion)
 				}
 				s.tasks.Add(task)
 			}
@@ -156,18 +156,6 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileC
 					continue
 				}
 
-				/*
-					Here is all the logic. There are two mutation: locally and based on the external event (i.e. from Executor).
-					The local mutation are made by the scheduler which is trying to advance the task towards _running_ state. Also, it tries to restart any failing task (stopped or exited).
-					The local mutation are:
-						- from ready to deploying meaning that the task will be sent to the executor
-						- from running to stopping meaning that the task needs to be stopped because of two reasons: the specs had changed or the task has been removed from EdgeWorkload manifest.
-						- from either stopping or exited or unknown to deploying. The natural behavior of the scheduler is to restart jobs but if the job has been marked or desactivated it will be restart.
-					All other mutations (i.e. from deploying to running) are event based. Using futures, the executor will send the new state every time the task changed state. Normally, the sequence of state should follow
-					the one in Podman.
-					The local mutation are made by marking the task for either running or stopping. A job which is marked for deletion will not be restarted and once it stopped it will be removed from the store.
-					A task can be enabled or desactivated based on the evaluation of the profiles. If the evaluation of task's profile resolved to false than the task is desactivated and it will be stopped but not removed from the store.
-				*/
 				if !s.mutate(task) {
 					continue
 				}
@@ -233,11 +221,17 @@ func (s *Scheduler) evaluate(t *Task) bool {
 	return true
 }
 
-/* mutate tries to mutate the task to a next state based on the current state.
-- if current state is ready then pass to deploying.
-- if current state is running and the task has been desactivated than stop it.
-- if current state is exited try to restarted
-- if current state is stopped than restarted
+/*
+	Here is all the logic. There are two mutation: locally and based on the external event (i.e. from Executor).
+	The local mutation are made by the scheduler which is trying to advance the task towards _running_ state. Also, it tries to restart any failing task (stopped or exited).
+	The local mutation are:
+		- from ready to deploying meaning that the task will be sent to the executor
+		- from running to stopping meaning that the task needs to be stopped because of two reasons: the specs had changed or the task has been removed from EdgeWorkload manifest.
+		- from either stopping or exited or unknown to deploying. The natural behavior of the scheduler is to restart jobs but if the job has been marked or desactivated it will be restart.
+	All other mutations (i.e. from deploying to running) are event based. Using futures, the executor will send the new state every time the task changed state. Normally, the sequence of state should follow
+	the one in Podman.
+	The local mutation are made by marking the task for either running or stopping. A job which is marked for deletion will not be restarted and once it stopped it will be removed from the store.
+	A task can be enabled or desactivated based on the evaluation of the profiles. If the evaluation of task's profile resolved to false than the task is desactivated and it will be stopped but not removed from the store.
 */
 func (s *Scheduler) mutate(t *Task) bool {
 	switch t.CurrentState() {
@@ -251,7 +245,7 @@ func (s *Scheduler) mutate(t *Task) bool {
 	case TaskStateDeployed:
 		fallthrough
 	case TaskStateRunning:
-		if s.isMarked(t, disablingMark) || s.isMarked(t, deletionMark) || s.isMarked(t, stopMark) {
+		if s.isMarked(t, disabling) || s.isMarked(t, deletion) || s.isMarked(t, stop) {
 			err := t.SetNextState(TaskStateStopping)
 			if err != nil {
 				zap.S().Errorw("set next state failed", "id", t.Name, "current_state", t.CurrentState(), "next_state", TaskStateDeployed.String())
@@ -264,7 +258,7 @@ func (s *Scheduler) mutate(t *Task) bool {
 	case TaskStateUnknown:
 		fallthrough
 	case TaskStateExited:
-		if !t.CanRun() || s.isMarked(t, deletionMark) {
+		if !t.CanRun() || s.isMarked(t, deletion) {
 			return false
 		}
 		err := t.SetNextState(TaskStateDeploying)
@@ -282,7 +276,7 @@ func (s *Scheduler) clean() {
 	for {
 		dirty := false
 		for i := 0; i < s.tasks.Len(); i++ {
-			if t, ok := s.tasks.Get(i); ok && s.isMarked(t, deletionMark) && (t.CurrentState() == TaskStateStopped || t.CurrentState() == TaskStateExited || t.CurrentState() == TaskStateUnknown) {
+			if t, ok := s.tasks.Get(i); ok && s.isMarked(t, deletion) && (t.CurrentState() == TaskStateStopped || t.CurrentState() == TaskStateExited || t.CurrentState() == TaskStateUnknown) {
 				s.tasks.Delete(t)
 				dirty = true
 				break
