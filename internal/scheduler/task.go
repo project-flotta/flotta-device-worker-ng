@@ -67,13 +67,34 @@ type ExecutionEvent struct {
 	Error  error
 }
 
+type Meta struct {
+	marks map[string]string
+}
+
+func (m *Meta) SetMark(key, val string) {
+	m.marks[key] = val
+}
+
+func (m *Meta) GetMark(key string) (value string, ok bool) {
+	value, ok = m.marks[key]
+	return
+}
+
+func (m *Meta) GetMarks() []string {
+	marks := make([]string, 0, len(m.marks))
+	for k := range m.marks {
+		marks = append(marks, k)
+	}
+	return marks
+}
+
+// ADD metadata data to be able to MarkForDeletion MarkForStopping MarkForRunning
 type Task struct {
+	Meta
 	// Name of the task
 	Name string
 	// workload
 	Workload entity.Workload
-	// Enabled is set to true when task passed profile evaluation
-	enabled bool
 	// failures counts the number of failures to run the workload
 	failures int
 	// nextState holds the desired next state of the task
@@ -87,10 +108,12 @@ type Task struct {
 
 func NewTask(name string, w entity.Workload) *Task {
 	t := Task{
+		Meta: Meta{
+			marks: make(map[string]string),
+		},
 		Name:      name,
 		Workload:  w,
 		nextState: TaskStateReady,
-		enabled:   true,
 	}
 
 	t.machine = stateMachine.NewStateMachine(TaskStateReady)
@@ -104,7 +127,8 @@ func NewTask(name string, w entity.Workload) *Task {
 	t.machine.Configure(TaskStateDeployed).
 		Permit(triggerRun, TaskStateRunning).
 		Permit(triggerError, TaskStateExited).
-		Permit(triggerUnknown, TaskStateUnknown)
+		Permit(triggerUnknown, TaskStateUnknown).
+		Permit(triggerStop, TaskStateStopping)
 
 	t.machine.Configure(TaskStateRunning).
 		Permit(triggerStop, TaskStateStopping).
@@ -143,12 +167,35 @@ func NewTask(name string, w entity.Workload) *Task {
 	return &t
 }
 
-func (t *Task) MarkForDeploy() error {
-	return t.setNextState(TaskStateDeploying)
-}
+func (t *Task) SetNextState(nextState TaskState) error {
+	if t.NextState() == nextState || t.CurrentState() == nextState {
+		return nil
+	}
 
-func (t *Task) MarkForStop() error {
-	return t.setNextState(TaskStateStopping)
+	switch nextState {
+	case TaskStateDeploying:
+		ok, err := t.machine.CanFire(triggerDeploy)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("trask cannot be transitioned to '%s'", nextState.String())
+		}
+	case TaskStateStopping:
+		ok, err := t.machine.CanFire(triggerStop)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("trask cannot be transitioned to '%s'", nextState.String())
+		}
+	default:
+		return fmt.Errorf("task cannot be transitioned to '%s'", nextState.String())
+	}
+
+	t.nextState = nextState
+
+	return nil
 }
 
 func (t *Task) NextState() TaskState {
@@ -157,32 +204,6 @@ func (t *Task) NextState() TaskState {
 
 func (t *Task) CurrentState() TaskState {
 	return t.machine.MustState().(TaskState)
-}
-
-func (t *Task) Enable(enabled bool) {
-	if t.IsEnabled() == enabled {
-		return
-	}
-
-	t.enabled = enabled
-
-	if !enabled {
-		switch t.CurrentState() {
-		case TaskStateDeploying, TaskStateRunning:
-			t.nextState = TaskStateStopping
-		case TaskStateStopping:
-			// do nothing here. let it stopped normally
-		}
-
-		return
-	}
-
-	t.machine.Fire(triggerReady)
-	t.nextState = TaskStateReady
-}
-
-func (t *Task) IsEnabled() bool {
-	return t.enabled
 }
 
 // CanRun returns true if the task can be executed
@@ -234,7 +255,6 @@ func (t *Task) String() string {
 		Workload:     t.Workload.String(),
 		NextState:    t.NextState().String(),
 		CurrentState: t.CurrentState().String(),
-		Enabled:      t.IsEnabled(),
 	}
 
 	json, err := json.Marshal(task)
@@ -251,35 +271,4 @@ func (t *Task) Hash() string {
 
 func (t *Task) ID() string {
 	return t.Name
-}
-
-func (t *Task) setNextState(nextState TaskState) error {
-	if t.NextState() == nextState || t.CurrentState() == nextState {
-		return nil
-	}
-
-	switch nextState {
-	case TaskStateDeploying:
-		ok, err := t.machine.CanFire(triggerDeploy)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("trask cannot be transitioned to '%s'", nextState.String())
-		}
-	case TaskStateStopping:
-		ok, err := t.machine.CanFire(triggerStop)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("trask cannot be transitioned to '%s'", nextState.String())
-		}
-	default:
-		return fmt.Errorf("task cannot be transitioned to '%s'", nextState.String())
-	}
-
-	t.nextState = nextState
-
-	return nil
 }

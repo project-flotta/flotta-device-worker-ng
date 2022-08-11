@@ -146,4 +146,41 @@ var _ = Describe("test scheduler", func() {
 		<-time.After(10 * time.Second)
 		Expect(mockExecutor.RunCount).To(Equal(4))
 	})
+
+	It("test workloads which are modified by the operator", func() {
+		s.Start(context.Background(), input, profileCh)
+
+		message = entity.Message{
+			Kind: entity.WorkloadConfigurationMessage,
+			Payload: entity.Option[[]entity.Workload]{
+				Value: []entity.Workload{
+					entity.PodWorkload{
+						Name:          "workload1",
+						Specification: "test",
+					},
+				},
+			},
+		}
+
+		input <- message
+		<-time.After(10 * time.Second)
+		Expect(mockExecutor.RunCount).To(Equal(1))
+		Expect(mockExecutor.StopCount).To(Equal(0))
+
+		message = entity.Message{
+			Kind: entity.WorkloadConfigurationMessage,
+			Payload: entity.Option[[]entity.Workload]{
+				Value: []entity.Workload{
+					entity.PodWorkload{
+						Name:          "workload1",
+						Specification: "other spec",
+					},
+				},
+			},
+		}
+		input <- message
+		<-time.After(10 * time.Second)
+		Expect(mockExecutor.RunCount).To(Equal(2))
+		Expect(mockExecutor.StopCount).To(Equal(1))
+	})
 })

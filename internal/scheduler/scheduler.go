@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
@@ -12,10 +13,18 @@ import (
 type actionType int
 
 const (
-	defaultHeartbeatPeriod            = 2 * time.Second
-	gracefullShutdown                 = 5 * time.Second
-	runAction              actionType = iota
+	defaultHeartbeatPeriod = 2 * time.Second
+	gracefullShutdown      = 5 * time.Second
+
+	// action type
+	runAction actionType = iota
 	stopAction
+
+	// marks type
+	deletionMark  string = "deletion"
+	stopMark      string = "stop"
+	deployMark    string = "deploy"
+	disablingMark string = "disable"
 )
 
 //go:generate mockgen -package=scheduler -destination=mock_executor.go --build_flags=--mod=mod . Executor
@@ -95,8 +104,8 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileC
 				iter := s.tasks.Iter()
 				for iter.HasNext() {
 					task, _ := iter.Next()
-					if task.IsEnabled() && (task.CurrentState() == TaskStateRunning || task.CurrentState() == TaskStateDeploying) {
-						task.MarkForStop()
+					if !s.isMarked(task, disablingMark) && (task.CurrentState() == TaskStateRunning || task.CurrentState() == TaskStateDeploying) {
+						s.mark(task, stopMark)
 					}
 				}
 				break
@@ -110,8 +119,9 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileC
 					}
 					// something changed in the workload. Stop the old one and start the new one
 					zap.S().Infow("workload changed", "name", oldTask.Name)
-					// stop the old one
-					oldTask.MarkForStop()
+					// stop the old one and remove it from store
+					s.mark(oldTask, stopMark)
+					s.mark(oldTask, deletionMark)
 				}
 				s.tasks.Add(task)
 			}
@@ -124,6 +134,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileC
 			taskIter := s.tasks.Iter()
 			for taskIter.HasNext() {
 				task, _ := taskIter.Next()
+				fmt.Printf("task %s hash %s current state %s next state %s\n", task.Name, task.Hash(), task.CurrentState().String(), task.NextState().String())
 
 				// check if result is ready for this task
 				// if ready try to mutate the task
@@ -145,7 +156,19 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileC
 					continue
 				}
 
-				if !s.transition(task) {
+				/*
+					Here is all the logic. There are two mutation: locally and based on the external event (i.e. from Executor).
+					The local mutation are made by the scheduler which is trying to advance the task towards _running_ state. Also, it tries to restart any failing task (stopped or exited).
+					The local mutation are:
+						- from ready to deploying meaning that the task will be sent to the executor
+						- from running to stopping meaning that the task needs to be stopped because of two reasons: the specs had changed or the task has been removed from EdgeWorkload manifest.
+						- from either stopping or exited or unknown to deploying. The natural behavior of the scheduler is to restart jobs but if the job has been marked or desactivated it will be restart.
+					All other mutations (i.e. from deploying to running) are event based. Using futures, the executor will send the new state every time the task changed state. Normally, the sequence of state should follow
+					the one in Podman.
+					The local mutation are made by marking the task for either running or stopping. A job which is marked for deletion will not be restarted and once it stopped it will be removed from the store.
+					A task can be enabled or desactivated based on the evaluation of the profiles. If the evaluation of task's profile resolved to false than the task is desactivated and it will be stopped but not removed from the store.
+				*/
+				if !s.mutate(task) {
 					continue
 				}
 
@@ -159,6 +182,9 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileC
 				}
 
 				task.InTransition = true
+
+				// clean task marked for deletion
+				s.clean()
 			}
 			if s.executionQueue.Size() > 0 {
 				executionInProgress = true
@@ -207,23 +233,30 @@ func (s *Scheduler) evaluate(t *Task) bool {
 	return true
 }
 
-/* transition tries to transition the task to a next state based on the current state.
+/* mutate tries to mutate the task to a next state based on the current state.
 - if current state is ready then pass to deploying.
 - if current state is running and the task has been desactivated than stop it.
 - if current state is exited try to restarted
 - if current state is stopped than restarted
 */
-func (s *Scheduler) transition(t *Task) bool {
-	if t.CurrentState() != t.NextState() {
-		return true // already mutated
-	}
+func (s *Scheduler) mutate(t *Task) bool {
 	switch t.CurrentState() {
 	case TaskStateReady:
-		t.MarkForDeploy()
+		err := t.SetNextState(TaskStateDeploying)
+		if err != nil {
+			zap.S().Errorw("set next state failed", "id", t.Name, "current_state", t.CurrentState(), "next_state", TaskStateDeployed.String())
+			return false
+		}
 		return true
+	case TaskStateDeployed:
+		fallthrough
 	case TaskStateRunning:
-		if !t.IsEnabled() {
-			t.MarkForStop()
+		if s.isMarked(t, disablingMark) || s.isMarked(t, deletionMark) || s.isMarked(t, stopMark) {
+			err := t.SetNextState(TaskStateStopping)
+			if err != nil {
+				zap.S().Errorw("set next state failed", "id", t.Name, "current_state", t.CurrentState(), "next_state", TaskStateDeployed.String())
+				return false
+			}
 			return true
 		}
 	case TaskStateStopped:
@@ -231,11 +264,41 @@ func (s *Scheduler) transition(t *Task) bool {
 	case TaskStateUnknown:
 		fallthrough
 	case TaskStateExited:
-		if !t.CanRun() {
+		if !t.CanRun() || s.isMarked(t, deletionMark) {
 			return false
 		}
-		t.MarkForDeploy()
+		err := t.SetNextState(TaskStateDeploying)
+		if err != nil {
+			zap.S().Errorw("set next state failed", "id", t.Name, "current_state", t.CurrentState(), "next_state", TaskStateDeployed.String())
+			return false
+		}
 		return true
 	}
 	return false
+}
+
+// remove task marked for deletion and which are stopped, exited or unknown
+func (s *Scheduler) clean() {
+	for {
+		dirty := false
+		for i := 0; i < s.tasks.Len(); i++ {
+			if t, ok := s.tasks.Get(i); ok && s.isMarked(t, deletionMark) && (t.CurrentState() == TaskStateStopped || t.CurrentState() == TaskStateExited || t.CurrentState() == TaskStateUnknown) {
+				s.tasks.Delete(t)
+				dirty = true
+				break
+			}
+		}
+		if !dirty {
+			break
+		}
+	}
+}
+
+func (s *Scheduler) mark(t *Task, mark string) {
+	t.SetMark(mark, mark)
+}
+
+func (s *Scheduler) isMarked(t *Task, mark string) bool {
+	_, marked := t.GetMark(mark)
+	return marked
 }
