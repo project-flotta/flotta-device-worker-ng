@@ -1,95 +1,35 @@
-package scheduler
+package scheduler_test
 
 import (
-	//	. "github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/tupyy/device-worker-ng/internal/entity"
+	"github.com/tupyy/device-worker-ng/internal/scheduler"
 )
 
-// func TestTask(t *testing.T) {
-// 	g := NewWithT(t)
-// 	task := NewTask("dummy", dummyWorkload("test"))
+var _ = Describe("task test", func() {
+	var task *scheduler.Task
+	BeforeEach(func() {
+		task = scheduler.NewTask("dummy", dummyWorkload("test"))
+	})
 
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateReady))
+	It("task should mutate correctly", func() {
+		Expect(task.CurrentState()).To(Equal(scheduler.TaskStateReady))
 
-// 	err := task.MarkForDeploy()
-// 	g.Expect(err).To(BeNil())
-// 	g.Expect(task.NextState()).To(Equal(TaskStateDeploying))
+		task.MutateTo(scheduler.TaskStateDeploying)
 
-// 	task.TransitionTo(TaskStateDeploying)
+		Expect(task.CurrentState()).To(Equal(scheduler.TaskStateDeploying))
 
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateDeploying))
+		task.MutateTo(scheduler.TaskStateDeployed)
+		Expect(task.CurrentState()).To(Equal(scheduler.TaskStateDeployed))
 
-// 	task.TransitionTo(TaskStateDeployed)
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateDeployed))
+		task.MutateTo(scheduler.TaskStateRunning)
+		Expect(task.CurrentState()).To(Equal(scheduler.TaskStateRunning))
 
-// 	task.TransitionTo(TaskStateRunning)
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateRunning))
-
-// 	task.TransitionTo(TaskStateExited)
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateExited))
-// 	g.Expect(task.failures).To(Equal(1))
-
-// 	// expect error when set next state to TaskStateStopping
-// 	err = task.MarkForStop()
-// 	g.Expect(err).NotTo(BeNil())
-
-// 	// expect nil when set next state to TaskStateDeploying
-// 	err = task.MarkForDeploy()
-// 	g.Expect(err).To(BeNil())
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateExited))
-// 	g.Expect(task.NextState()).To(Equal(TaskStateDeploying))
-// }
-
-// func TestTaskWhenSetEnableToFalse(t *testing.T) {
-// 	g := NewWithT(t)
-// 	task := NewTask("dummy", dummyWorkload("test"))
-
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateReady))
-
-// 	err := task.MarkForDeploy()
-// 	g.Expect(err).To(BeNil())
-// 	g.Expect(task.NextState()).To(Equal(TaskStateDeploying))
-
-// 	task.TransitionTo(TaskStateDeploying)
-
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateDeploying))
-
-// 	task.TransitionTo(TaskStateDeployed)
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateDeployed))
-
-// 	task.TransitionTo(TaskStateRunning)
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateRunning))
-// 	task.Enable(false)
-
-// 	g.Expect(task.NextState()).To(Equal(TaskStateStopping))
-// 	g.Expect(task.IsEnabled()).To(BeFalse())
-// }
-
-// func TestTaskWhenSetEnableToTrue(t *testing.T) {
-// 	g := NewWithT(t)
-// 	task := NewTask("dummy", dummyWorkload("test"))
-// 	task.Enable(false)
-// 	g.Expect(task.IsEnabled()).To(BeFalse())
-
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateReady))
-
-// 	err := task.MarkForDeploy()
-// 	g.Expect(err).To(BeNil())
-// 	g.Expect(task.NextState()).To(Equal(TaskStateDeploying))
-
-// 	task.TransitionTo(TaskStateDeploying)
-
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateDeploying))
-
-// 	task.TransitionTo(TaskStateDeployed)
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateDeployed))
-
-// 	task.TransitionTo(TaskStateRunning)
-// 	task.TransitionTo(TaskStateStopped)
-
-// 	g.Expect(task.CurrentState()).To(Equal(TaskStateStopped))
-
-// }
+		task.MutateTo(scheduler.TaskStateExited)
+		Expect(task.CurrentState()).To(Equal(scheduler.TaskStateExited))
+	})
+})
 
 type dummyWorkload string
 

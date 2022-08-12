@@ -6,6 +6,7 @@ import (
 )
 
 type Element interface {
+	Name() string
 	ID() string
 }
 
@@ -68,13 +69,24 @@ func (s *Store[T]) Get(idx int) (T, bool) {
 	return s.tasks[idx], true
 }
 
-func (s *Store[T]) Find(name string) (T, bool) {
-	var none T
-	idx, err := s.index(name)
-	if err != nil {
-		return none, false
+func (s *Store[T]) FindByID(id string) (T, bool) {
+	for i, t := range s.tasks {
+		if t.ID() == id {
+			return s.tasks[i], true
+		}
 	}
-	return s.tasks[idx], true
+	var none T
+	return none, false
+}
+
+func (s *Store[T]) FindByName(name string) (T, bool) {
+	for i, t := range s.tasks {
+		if t.Name() == name {
+			return s.tasks[i], true
+		}
+	}
+	var none T
+	return none, false
 }
 
 func (s *Store[T]) Delete(element T) T {
@@ -99,9 +111,9 @@ func (s *Store[T]) clone() *Store[T] {
 	}
 }
 
-func (s *Store[T]) index(name string) (int, error) {
+func (s *Store[T]) index(id string) (int, error) {
 	for i, t := range s.tasks {
-		if t.ID() == name {
+		if t.ID() == id {
 			return i, nil
 		}
 	}

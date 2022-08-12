@@ -33,6 +33,10 @@ func TestStore(t *testing.T) {
 	_, ko := iter.Next()
 	g.Expect(ko).To(BeFalse())
 
+	// find 2
+	_, ok := store.Find("2")
+	g.Expect(ok).To(BeTrue())
+
 	// delete 2
 	store.Delete(element(2))
 	g.Expect(store.Len()).To(Equal(2))

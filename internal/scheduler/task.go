@@ -28,6 +28,8 @@ func (ts TaskState) String() string {
 		return "stopped"
 	case TaskStateExited:
 		return "exited"
+	case TaskStateInactive:
+		return "inactive"
 	default:
 		return "unknown"
 	}
@@ -50,6 +52,8 @@ const (
 	TaskStateExited
 	// TaskStateUnknown indicates that the task is in an unknown state
 	TaskStateUnknown
+	// TaskStateInactive indicates that the task is in an inactive state.
+	TaskStateInactive
 
 	triggerReady    = "ready"
 	triggerDeploy   = "deploy"
@@ -58,6 +62,7 @@ const (
 	triggerStop     = "stop"
 	triggerStopped  = "stopped"
 	triggerError    = "error"
+	triggerInactive = "inactive"
 	triggerUnknown  = "unknown"
 )
 
@@ -80,6 +85,14 @@ func (m *Meta) GetMark(key string) (value string, ok bool) {
 	return
 }
 
+func (m *Meta) RemoveMark(key string) {
+	delete(m.marks, key)
+}
+
+func (m *Meta) CleanMarks() {
+	m.marks = make(map[string]string)
+}
+
 func (m *Meta) GetMarks() []string {
 	marks := make([]string, 0, len(m.marks))
 	for k := range m.marks {
@@ -88,20 +101,22 @@ func (m *Meta) GetMarks() []string {
 	return marks
 }
 
+func (m *Meta) HasMarks() bool {
+	return len(m.marks) > 0
+}
+
 // ADD metadata data to be able to MarkForDeletion MarkForStopping MarkForRunning
 type Task struct {
 	Meta
-	// Name of the task
-	Name string
 	// workload
 	Workload entity.Workload
+	// Name of the task
+	name string
 	// failures counts the number of failures to run the workload
 	failures int
 	// nextState holds the desired next state of the task
 	// nextState is mutated by the scheduler when it wants to run/stop the workload
 	nextState TaskState
-	// InTransition is set to bool if an action to reconcile current and next state has been taken
-	InTransition bool
 	// state machine
 	machine *stateMachine.StateMachine
 }
@@ -111,17 +126,19 @@ func NewTask(name string, w entity.Workload) *Task {
 		Meta: Meta{
 			marks: make(map[string]string),
 		},
-		Name:      name,
+		name:      name,
 		Workload:  w,
 		nextState: TaskStateReady,
 	}
 
 	t.machine = stateMachine.NewStateMachine(TaskStateReady)
 	t.machine.Configure(TaskStateReady).
-		Permit(triggerDeploy, TaskStateDeploying)
+		Permit(triggerDeploy, TaskStateDeploying).
+		Permit(triggerInactive, TaskStateInactive)
 
 	t.machine.Configure(TaskStateDeploying).
 		Permit(triggerDeployed, TaskStateDeployed).
+		Permit(triggerReady, TaskStateReady).
 		Permit(triggerError, TaskStateExited)
 
 	t.machine.Configure(TaskStateDeployed).
@@ -137,11 +154,13 @@ func NewTask(name string, w entity.Workload) *Task {
 		Permit(triggerUnknown, TaskStateUnknown)
 
 	t.machine.Configure(TaskStateStopping).
+		Permit(triggerReady, TaskStateReady).
 		Permit(triggerStopped, TaskStateStopped)
 
 	t.machine.Configure(TaskStateStopped).
 		Permit(triggerDeploy, TaskStateDeploying).
-		Permit(triggerReady, TaskStateReady)
+		Permit(triggerReady, TaskStateReady).
+		Permit(triggerInactive, TaskStateInactive)
 
 	t.machine.Configure(TaskStateExited).
 		OnEntry(func(ctx context.Context, args ...interface{}) error {
@@ -149,6 +168,7 @@ func NewTask(name string, w entity.Workload) *Task {
 			return nil
 		}).
 		Permit(triggerDeploy, TaskStateDeploying).
+		Permit(triggerInactive, TaskStateInactive).
 		Permit(triggerReady, TaskStateReady)
 
 	t.machine.Configure(TaskStateUnknown).
@@ -157,11 +177,15 @@ func NewTask(name string, w entity.Workload) *Task {
 			return nil
 		}).
 		Permit(triggerDeploy, TaskStateDeploying).
+		Permit(triggerInactive, TaskStateInactive).
+		Permit(triggerReady, TaskStateReady)
+
+	t.machine.Configure(TaskStateInactive).
 		Permit(triggerReady, TaskStateReady)
 
 	t.machine.OnTransitioned(func(ctx context.Context, tt stateMachine.Transition) {
-		fmt.Printf("task %s transitioned from %s to %s\n", t.Name, tt.Source, tt.Destination)
-		zap.S().Debugf("task %s transitioned from %s to %s", t.Name, tt.Destination, tt.Source)
+		fmt.Printf("task %s transitioned from %s to %s\n", t.ID(), tt.Source, tt.Destination)
+		zap.S().Debugf("task %s transitioned from %s to %s", t.name, tt.Destination, tt.Source)
 	})
 
 	return &t
@@ -183,6 +207,14 @@ func (t *Task) SetNextState(nextState TaskState) error {
 		}
 	case TaskStateStopping:
 		ok, err := t.machine.CanFire(triggerStop)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("trask cannot be transitioned to '%s'", nextState.String())
+		}
+	case TaskStateInactive:
+		ok, err := t.machine.CanFire(triggerInactive)
 		if err != nil {
 			return err
 		}
@@ -213,7 +245,12 @@ func (t *Task) CanRun() bool {
 	return t.failures <= 3
 }
 
-func (t *Task) TransitionTo(s TaskState) {
+func (t *Task) Reset() {
+	t.failures = 0
+	t.machine.Fire(triggerReady)
+}
+
+func (t *Task) MutateTo(s TaskState) {
 	var err error
 	switch s {
 	case TaskStateDeploying:
@@ -228,19 +265,20 @@ func (t *Task) TransitionTo(s TaskState) {
 		err = t.machine.Fire(triggerStopped)
 	case TaskStateExited:
 		err = t.machine.Fire(triggerError)
+	case TaskStateInactive:
+		err = t.machine.Fire(triggerInactive)
 	case TaskStateUnknown:
 		err = t.machine.Fire(triggerUnknown)
 	}
 
 	if err != nil {
 		fmt.Println(err)
-		zap.S().Errorw("failed to transition task", "id", t.Name, "error", err)
+		zap.S().Errorw("failed to transition task", "id", t.name, "error", err)
 		return
 	}
 
 	// mutate the nextState to the current state and let the scheduler decide what to do next
 	t.nextState = t.CurrentState()
-	t.InTransition = false
 }
 
 func (t *Task) String() string {
@@ -251,7 +289,7 @@ func (t *Task) String() string {
 		NextState    string `json:"next_state"`
 		Enabled      bool   `json:"enabled"`
 	}{
-		Name:         t.Name,
+		Name:         t.name,
 		Workload:     t.Workload.String(),
 		NextState:    t.NextState().String(),
 		CurrentState: t.CurrentState().String(),
@@ -270,5 +308,9 @@ func (t *Task) Hash() string {
 }
 
 func (t *Task) ID() string {
-	return t.Name
+	return t.Hash()
+}
+
+func (t *Task) Name() string {
+	return t.name
 }

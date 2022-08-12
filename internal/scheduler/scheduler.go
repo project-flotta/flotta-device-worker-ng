@@ -21,10 +21,10 @@ const (
 	stopAction
 
 	// marks type
-	deletion  string = "deletion"
-	stop      string = "stop"
-	deploy    string = "deploy"
-	disabling string = "disable"
+	deletion string = "deletion"
+	stop     string = "stop"
+	deploy   string = "deploy"
+	inactive string = "inactive"
 )
 
 //go:generate mockgen -package=scheduler -destination=mock_executor.go --build_flags=--mod=mod . Executor
@@ -69,42 +69,54 @@ func newExecutor(executor Executor, heartbeatPeriod time.Duration) *Scheduler {
 func (s *Scheduler) Start(ctx context.Context, input chan entity.Message, profileUpdateCh chan entity.Message) {
 	runCtx, cancel := context.WithCancel(ctx)
 	s.runCancel = cancel
-	go s.run(runCtx, input, profileUpdateCh)
+
+	taskCh := make(chan entity.Option[[]entity.Workload])
+	go s.run(runCtx, taskCh, profileUpdateCh)
+	go func(ctx context.Context) {
+		for {
+			select {
+			case message := <-input:
+				switch message.Kind {
+				case entity.WorkloadConfigurationMessage:
+					val, ok := message.Payload.(entity.Option[[]entity.Workload])
+					if !ok {
+						zap.S().Errorf("mismatch message payload type. expected workload. got %v", message)
+					}
+					taskCh <- val
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}(runCtx)
 }
 
 func (s *Scheduler) Stop(ctx context.Context) {
 	zap.S().Info("shutting down scheduler")
 
-	// shutdown run goroutine
+	// shutdown goroutines
 	s.runCancel()
 
 	zap.S().Info("scheduler shutdown")
 }
 
-func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileCh chan entity.Message) {
-	taskCh := make(chan entity.Option[[]entity.Workload], 1)
-	heartbeat := time.NewTicker(defaultHeartbeatPeriod)
+func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.Workload], profileCh chan entity.Message) {
+	execution := make(chan struct{}, 1)
+	futures := make(chan struct{}, 1)
 	doneExecutionCh := make(chan struct{})
-	executionInProgress := false
+	mutate := make(chan struct{}, 1)
+
+	heartbeat := time.NewTicker(defaultHeartbeatPeriod)
 
 	for {
 		select {
-		case message := <-input:
-			switch message.Kind {
-			case entity.WorkloadConfigurationMessage:
-				val, ok := message.Payload.(entity.Option[[]entity.Workload])
-				if !ok {
-					zap.S().Errorf("mismatch message payload type. expected workload. got %v", message)
-				}
-				taskCh <- val
-			}
-		case o := <-taskCh:
+		case o := <-input:
 			if o.None {
 				// stop tasks
 				iter := s.tasks.Iter()
 				for iter.HasNext() {
 					task, _ := iter.Next()
-					if !s.isMarked(task, disabling) && (task.CurrentState() == TaskStateRunning || task.CurrentState() == TaskStateDeploying) {
+					if !s.isMarked(task, inactive) && (task.CurrentState() == TaskStateRunning || task.CurrentState() == TaskStateDeploying) {
 						s.mark(task, stop)
 					}
 				}
@@ -113,7 +125,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileC
 			// add tasks
 			for _, w := range o.Value {
 				task := NewTask(w.ID(), w)
-				if oldTask, found := s.tasks.Find(task.Name); found {
+				if oldTask, found := s.tasks.FindByName(task.Name()); found {
 					if oldTask.Hash() == task.Hash() {
 						continue
 					}
@@ -125,42 +137,44 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileC
 				}
 				s.tasks.Add(task)
 			}
-		case <-heartbeat.C:
-			// wait until all the task had been sent to the executor
-			if executionInProgress {
-				break
-			}
+		case <-futures:
+			// Poll futures.
+			for id, future := range s.futures {
+				result, _ := future.Poll()
+				if result.IsReady() {
+					task, ok := s.tasks.FindByID(id)
+					if !ok {
+						delete(s.futures, id)
+					}
+					zap.S().Debugw("poll future", "id", task.Hash(), "result", result)
+					task.MutateTo(result.Value)
+				}
 
+				// future is resolved when task has either been stopped or exited.
+				if future.Resolved() {
+					delete(s.futures, id)
+				}
+			}
+			mutate <- struct{}{}
+		case <-mutate:
 			taskIter := s.tasks.Iter()
 			for taskIter.HasNext() {
 				task, _ := taskIter.Next()
-				fmt.Printf("task %s hash %s current state %s next state %s\n", task.Name, task.Hash(), task.CurrentState().String(), task.NextState().String())
+				fmt.Printf("task %s hash %s current state %s next state %s\n", task.Name(), task.Hash(), task.CurrentState().String(), task.NextState().String())
 
-				// check if result is ready for this task
-				// if ready try to mutate the task
-				future, ok := s.futures[task.Hash()]
-				if ok {
-					result, _ := future.Poll()
-					if result.IsReady() {
-						zap.S().Debugw("poll future", "id", task.Hash(), "result", result)
-						task.TransitionTo(result.Value)
-					}
-
-					// future is resolved when task has either been stopped or exited.
-					if future.Resolved() {
-						delete(s.futures, task.Hash())
-					}
+				// evaluate the task
+				if !s.evaluate(task) {
+					s.mark(task, stop)
+					s.mark(task, inactive)
 				}
 
-				if task.InTransition {
-					continue
-				}
-
-				if !s.mutate(task) {
+				if !s.transitionToNextState(task) {
 					continue
 				}
 
 				switch task.NextState() {
+				case TaskStateInactive:
+					task.MutateTo(TaskStateInactive)
 				case TaskStateStopping:
 					zap.S().Debugw("stop task", "id", task.Name)
 					s.executionQueue.Push(stopAction, task)
@@ -168,18 +182,22 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Message, profileC
 					zap.S().Debugw("deploy task", "id", task.Name)
 					s.executionQueue.Push(runAction, task)
 				}
-
-				task.InTransition = true
-
-				// clean task marked for deletion
-				s.clean()
 			}
-			if s.executionQueue.Size() > 0 {
-				executionInProgress = true
-				go s.execute(context.Background(), doneExecutionCh)
+			if s.tasks.Len() > 0 {
+				execution <- struct{}{}
 			}
+		case <-execution:
+			// clean task marked for deletion
+			s.clean()
+			// execute every task in the execution queue
+			go s.execute(context.Background(), doneExecutionCh)
+			// stop heartbeat while we are consuming the execution queue.
+			// Once is done, reset the timer.
+			heartbeat.Stop()
 		case <-doneExecutionCh:
-			executionInProgress = false
+			heartbeat.Reset(defaultHeartbeatPeriod)
+		case <-heartbeat.C:
+			futures <- struct{}{}
 		case <-ctx.Done():
 			return
 		}
@@ -200,12 +218,10 @@ func (s *Scheduler) execute(ctx context.Context, doneCh chan struct{}) {
 			}
 			switch action {
 			case stopAction:
-				task.TransitionTo(TaskStateStopping)
-				task.InTransition = false
+				task.MutateTo(TaskStateStopping)
 				s.executor.Stop(context.Background(), task.Workload)
 			case runAction:
-				task.TransitionTo(TaskStateDeploying)
-				task.InTransition = false
+				task.MutateTo(TaskStateDeploying)
 				future := s.executor.Run(context.Background(), task.Workload)
 				s.futures[task.Hash()] = future
 			}
@@ -222,52 +238,79 @@ func (s *Scheduler) evaluate(t *Task) bool {
 }
 
 /*
-	Here is all the logic. There are two mutation: locally and based on the external event (i.e. from Executor).
-	The local mutation are made by the scheduler which is trying to advance the task towards _running_ state. Also, it tries to restart any failing task (stopped or exited).
-	The local mutation are:
+	Here is all the logic. There are two mutations: natural and event-based.
+	Naturally, the scheduler tries to advance the task towards _running_ state and restart any failing task (stopped, exit or in unknown state). Marks change this behavior.
+	The natural mutations are:
 		- from ready to deploying meaning that the task will be sent to the executor
-		- from running to stopping meaning that the task needs to be stopped because of two reasons: the specs had changed or the task has been removed from EdgeWorkload manifest.
-		- from either stopping or exited or unknown to deploying. The natural behavior of the scheduler is to restart jobs but if the job has been marked or desactivated it will be restart.
+		- from either stopping or exited or unknown to deploying. The natural behavior of the scheduler is to restart jobs but this can be changed if the job has been marked.
+
+	If the tasked has been removed from EdgeWorkload or the specs had changed,the scheduler tries to stopped it.
 	All other mutations (i.e. from deploying to running) are event based. Using futures, the executor will send the new state every time the task changed state. Normally, the sequence of state should follow
 	the one in Podman.
-	The local mutation are made by marking the task for either running or stopping. A job which is marked for deletion will not be restarted and once it stopped it will be removed from the store.
-	A task can be enabled or desactivated based on the evaluation of the profiles. If the evaluation of task's profile resolved to false than the task is desactivated and it will be stopped but not removed from the store.
+
+	Marks can change the behavior of task. If a task is keep failing and it passed the failing threshold (TBD), the task is marked as inactive and if the task is currently running it will be stopped and transition into Inactive state afterwards.
 */
-func (s *Scheduler) mutate(t *Task) bool {
-	switch t.CurrentState() {
-	case TaskStateReady:
-		err := t.SetNextState(TaskStateDeploying)
-		if err != nil {
-			zap.S().Errorw("set next state failed", "id", t.Name, "current_state", t.CurrentState(), "next_state", TaskStateDeployed.String())
-			return false
-		}
-		return true
-	case TaskStateDeployed:
-		fallthrough
-	case TaskStateRunning:
-		if s.isMarked(t, disabling) || s.isMarked(t, deletion) || s.isMarked(t, stop) {
-			err := t.SetNextState(TaskStateStopping)
+func (s *Scheduler) transitionToNextState(t *Task) bool {
+	// natural mutation without marks are:
+	// from ready to deploying
+	// from stopped | unknown | exit to deploying
+	if !t.HasMarks() {
+		switch t.CurrentState() {
+		case TaskStateReady:
+			err := t.SetNextState(TaskStateDeploying)
+			if err != nil {
+				zap.S().Errorw("set next state failed", "id", t.Name, "current_state", t.CurrentState(), "next_state", TaskStateDeployed.String())
+				return false
+			}
+			return true
+		case TaskStateStopped:
+			fallthrough
+		case TaskStateUnknown:
+			fallthrough
+		case TaskStateExited:
+			// if task cannot be restarted marked inactive
+			if !t.CanRun() {
+				return false
+			}
+			err := t.SetNextState(TaskStateDeploying)
 			if err != nil {
 				zap.S().Errorw("set next state failed", "id", t.Name, "current_state", t.CurrentState(), "next_state", TaskStateDeployed.String())
 				return false
 			}
 			return true
 		}
-	case TaskStateStopped:
-		fallthrough
-	case TaskStateUnknown:
-		fallthrough
-	case TaskStateExited:
-		if !t.CanRun() || s.isMarked(t, deletion) {
-			return false
-		}
-		err := t.SetNextState(TaskStateDeploying)
-		if err != nil {
-			zap.S().Errorw("set next state failed", "id", t.Name, "current_state", t.CurrentState(), "next_state", TaskStateDeployed.String())
-			return false
-		}
-		return true
 	}
+
+	// process task with marks
+	for _, mark := range t.GetMarks() {
+		switch mark {
+		case stop:
+			if t.CurrentState() != TaskStateDeployed && t.CurrentState() != TaskStateDeploying && t.CurrentState() != TaskStateRunning {
+				return false
+			}
+			err := t.SetNextState(TaskStateStopping)
+			if err != nil {
+				zap.S().Errorw("set next state failed", "id", t.Name, "current_state", t.CurrentState(), "next_state", TaskStateDeployed.String())
+				return false
+			}
+			t.RemoveMark(stop)
+			return true
+		case inactive:
+			if t.CurrentState() != TaskStateReady && t.CurrentState() != TaskStateStopped && t.CurrentState() != TaskStateExited && t.CurrentState() != TaskStateUnknown {
+				return false
+			}
+			// transition to inactive is permitted only from ready, stopped, exit or unknown state.
+			// a running job must be stopped before make it transition to inactive
+			err := t.SetNextState(TaskStateInactive)
+			if err != nil {
+				zap.S().Errorw("set next state failed", "id", t.Name, "current_state", t.CurrentState(), "next_state", TaskStateDeployed.String())
+				return false
+			}
+			return true
+
+		}
+	}
+
 	return false
 }
 
