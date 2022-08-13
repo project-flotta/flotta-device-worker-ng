@@ -55,8 +55,8 @@ func New(path string, certManager *certificate.Manager) (*Client, error) {
 
 	// TODO dynamically set based on log level
 	transportWrapper := make([]transportWrapper, 0, 1)
-	logWrapper := &logTransportWrapper{}
-	transportWrapper = append(transportWrapper, logWrapper.Wrap)
+	// logWrapper := &logTransportWrapper{}
+	// transportWrapper = append(transportWrapper, logWrapper.Wrap)
 
 	return &Client{
 		serverURL:            url,

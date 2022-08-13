@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
@@ -168,7 +167,6 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			taskIter := s.tasks.Iter()
 			for taskIter.HasNext() {
 				task, _ := taskIter.Next()
-				fmt.Printf("task %s hash %s current state %s next state %s\n", task.Name(), task.Hash(), task.CurrentState().String(), task.NextState().String())
 
 				mutated, err := s.mutator.Mutate(task)
 				if err != nil {

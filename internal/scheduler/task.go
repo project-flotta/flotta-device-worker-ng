@@ -200,7 +200,7 @@ func _new(name string, w entity.Workload) *Task {
 		Permit(triggerReady, TaskStateReady)
 
 	t.machine.OnTransitioned(func(ctx context.Context, tt stateMachine.Transition) {
-		fmt.Printf("task %s transitioned from %s to %s\n", t.ID(), tt.Source, tt.Destination)
+		//		fmt.Printf("task %s transitioned from %s to %s\n", t.ID(), tt.Source, tt.Destination)
 		zap.S().Debugf("task %s transitioned from %s to %s", t.name, tt.Destination, tt.Source)
 	})
 

@@ -63,11 +63,11 @@ var rootCmd = &cobra.Command{
 		}
 
 		controller := edge.New(httpClient, confManager, certManager)
-		stateManager := state.New(confManager.ProfileCh)
+		stateManager := state.New(confManager.StateManagerCh)
 		scheduler := scheduler.New(executor)
 
 		ctx, cancel := context.WithCancel(context.Background())
-		scheduler.Start(ctx, confManager.TaskCh)
+		scheduler.Start(ctx, confManager.SchedulerCh, stateManager.OutputCh)
 
 		done := make(chan os.Signal, 1)
 		signal.Notify(done, os.Interrupt, os.Kill)

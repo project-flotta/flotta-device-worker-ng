@@ -37,7 +37,7 @@ type Manager struct {
 func New() *Manager {
 	m := &Manager{
 		conf:           defaultConfiguration,
-		SchedulerCh:    make(chan entity.Message),
+		SchedulerCh:    make(chan entity.Message, 10),
 		StateManagerCh: make(chan entity.Message),
 		hardware:       NewHardwareInfo(nil).GetHardwareInformation(),
 	}
@@ -63,13 +63,14 @@ func (c *Manager) SetConfiguration(e entity.DeviceConfigurationMessage) {
 
 	// send task to scheduler
 	o := entity.Option[[]entity.Workload]{
-		Value: c.conf.Workloads,
+		Value: e.Workloads,
 	}
 
-	if len(c.conf.Workloads) == 0 {
+	if len(e.Workloads) == 0 {
 		o.None = true
 	}
 
+	zap.S().Debugw("new workloads", "workloads", o)
 	c.SchedulerCh <- entity.Message{
 		Kind:    entity.WorkloadConfigurationMessage,
 		Payload: o,

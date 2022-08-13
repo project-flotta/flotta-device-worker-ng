@@ -26,33 +26,33 @@ type Evaluator interface {
 
 type Manager struct {
 	// profile condition updates are written to this channel
-	OutputCh chan []EvaluationResult
+	OutputCh chan entity.Message
 
 	// profileEvaluator try to determine if a profile changed state
 	// after each new metricValue
 	profilesEvaluator Evaluator
 
 	deviceProfiles map[string]entity.DeviceProfile
-	recv           chan entity.Option[map[string]entity.DeviceProfile]
+	recv           chan entity.Message
 	cancelFunc     context.CancelFunc
 	metricServer   MetricServer
 }
 
 // New returns a new state manager with the default evaluator
-func New(recv chan entity.Option[map[string]entity.DeviceProfile]) *Manager {
+func New(recv chan entity.Message) *Manager {
 	return _new(recv, &simpleEvaluator{})
 }
 
 // NewWithEvaluator returns a new state manager with the provided evaluator
-func NewWithEvaluator(recv chan entity.Option[map[string]entity.DeviceProfile], e Evaluator) *Manager {
+func NewWithEvaluator(recv chan entity.Message, e Evaluator) *Manager {
 	return _new(recv, e)
 }
 
-func _new(recv chan entity.Option[map[string]entity.DeviceProfile], evaluator Evaluator) *Manager {
+func _new(recv chan entity.Message, evaluator Evaluator) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	m := &Manager{
-		OutputCh:          make(chan []EvaluationResult),
+		OutputCh:          make(chan entity.Message),
 		recv:              recv,
 		cancelFunc:        cancel,
 		profilesEvaluator: evaluator,
@@ -67,10 +67,20 @@ func (m *Manager) run(ctx context.Context) {
 	var metricChannel chan metricValue
 
 	ticker := time.NewTicker(2 * time.Second)
+	input := make(chan entity.Option[map[string]entity.DeviceProfile])
 
 	for {
 		select {
-		case opt := <-m.recv:
+		case m := <-m.recv:
+			switch m.Kind {
+			case entity.ProfileConfigurationMessage:
+				val, ok := m.Payload.(entity.Option[map[string]entity.DeviceProfile])
+				if !ok {
+					zap.S().Errorf("mismatch message payload type. expected workload. got %v", m)
+				}
+				input <- val
+			}
+		case opt := <-input:
 			// if map empty stop the metric server
 			if opt.None {
 				if m.metricServer != nil {
@@ -102,7 +112,10 @@ func (m *Manager) run(ctx context.Context) {
 			}
 
 			zap.S().Debugw("evaluate profiles", "results", opt.Value)
-			m.OutputCh <- opt.Value
+			m.OutputCh <- entity.Message{
+				Kind:    entity.ProfileConfigurationMessage,
+				Payload: opt.Value,
+			}
 		case <-ctx.Done():
 			return
 		}

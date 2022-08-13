@@ -3,7 +3,6 @@ package executor
 import (
 	"context"
 	"fmt"
-	"os"
 
 	podmanEvents "github.com/containers/podman/v4/libpod/events"
 	"github.com/containers/podman/v4/pkg/bindings"
@@ -55,8 +54,8 @@ type podman struct {
 	timeoutForStopping int
 }
 
-func NewPodman() (*podman, error) {
-	podmanConnection, err := podmanConnection()
+func NewPodman(xdgRuntimeDir string) (*podman, error) {
+	podmanConnection, err := podmanConnection(xdgRuntimeDir)
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +176,8 @@ func (p *podman) getContainerDetails(containerId string) (*ContainerReport, erro
 	}, nil
 }
 
-func podmanConnection() (context.Context, error) {
-	podmanConnection, err := bindings.NewConnection(context.Background(), fmt.Sprintf("unix:%s/podman/podman.sock", os.Getenv("FLOTTA_XDG_RUNTIME_DIR")))
+func podmanConnection(xdgRuntimeDir string) (context.Context, error) {
+	podmanConnection, err := bindings.NewConnection(context.Background(), fmt.Sprintf("unix:%s/podman/podman.sock", xdgRuntimeDir))
 	if err != nil {
 		return nil, err
 	}
