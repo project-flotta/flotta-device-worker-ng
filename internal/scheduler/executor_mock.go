@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
 )
@@ -33,7 +32,6 @@ func (e *MockExecutor) Stop(ctx context.Context, w entity.Workload) {
 
 	ch, ok := e.futureCh[w.ID()]
 	if !ok {
-		fmt.Printf("$$$")
 		return
 	}
 
@@ -46,4 +44,8 @@ func (e *MockExecutor) SendStateToTask(id string, state TaskState, resolveFuture
 		return
 	}
 	ch <- state
+	if state == TaskStateStopped || state == TaskStateExited || state == TaskStateUnknown {
+		close(ch)
+		delete(e.futureCh, id)
+	}
 }

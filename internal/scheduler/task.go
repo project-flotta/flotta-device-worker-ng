@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	stateMachine "github.com/qmuntal/stateless"
 	"github.com/tupyy/device-worker-ng/internal/entity"
@@ -33,6 +34,15 @@ func (ts TaskState) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+func (ts TaskState) OneOf(states ...TaskState) bool {
+	for _, s := range states {
+		if ts == s {
+			return true
+		}
+	}
+	return false
 }
 
 const (
@@ -73,14 +83,14 @@ type ExecutionEvent struct {
 }
 
 type Meta struct {
-	marks map[string]string
+	marks map[string]interface{}
 }
 
-func (m *Meta) SetMark(key, val string) {
+func (m *Meta) SetMark(key string, val interface{}) {
 	m.marks[key] = val
 }
 
-func (m *Meta) GetMark(key string) (value string, ok bool) {
+func (m *Meta) GetMark(key string) (value interface{}, ok bool) {
 	value, ok = m.marks[key]
 	return
 }
@@ -90,7 +100,7 @@ func (m *Meta) RemoveMark(key string) {
 }
 
 func (m *Meta) CleanMarks() {
-	m.marks = make(map[string]string)
+	m.marks = make(map[string]interface{})
 }
 
 func (m *Meta) GetMarks() []string {
@@ -110,10 +120,12 @@ type Task struct {
 	Meta
 	// workload
 	Workload entity.Workload
+	// Failures counts the number of Failures to run the workload
+	Failures int
+	// timestamp of the last failure.
+	LastFailureTimestamp time.Time
 	// Name of the task
 	name string
-	// failures counts the number of failures to run the workload
-	failures int
 	// nextState holds the desired next state of the task
 	// nextState is mutated by the scheduler when it wants to run/stop the workload
 	nextState TaskState
@@ -122,9 +134,13 @@ type Task struct {
 }
 
 func NewTask(name string, w entity.Workload) *Task {
+	return _new(name, w)
+}
+
+func _new(name string, w entity.Workload) *Task {
 	t := Task{
 		Meta: Meta{
-			marks: make(map[string]string),
+			marks: make(map[string]interface{}),
 		},
 		name:      name,
 		Workload:  w,
@@ -164,7 +180,7 @@ func NewTask(name string, w entity.Workload) *Task {
 
 	t.machine.Configure(TaskStateExited).
 		OnEntry(func(ctx context.Context, args ...interface{}) error {
-			t.failures++
+			t.Failures++
 			return nil
 		}).
 		Permit(triggerDeploy, TaskStateDeploying).
@@ -173,7 +189,7 @@ func NewTask(name string, w entity.Workload) *Task {
 
 	t.machine.Configure(TaskStateUnknown).
 		OnEntry(func(ctx context.Context, args ...interface{}) error {
-			t.failures++
+			t.Failures++
 			return nil
 		}).
 		Permit(triggerDeploy, TaskStateDeploying).
@@ -191,43 +207,8 @@ func NewTask(name string, w entity.Workload) *Task {
 	return &t
 }
 
-func (t *Task) SetNextState(nextState TaskState) error {
-	if t.NextState() == nextState || t.CurrentState() == nextState {
-		return nil
-	}
-
-	switch nextState {
-	case TaskStateDeploying:
-		ok, err := t.machine.CanFire(triggerDeploy)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("trask cannot be transitioned to '%s'", nextState.String())
-		}
-	case TaskStateStopping:
-		ok, err := t.machine.CanFire(triggerStop)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("trask cannot be transitioned to '%s'", nextState.String())
-		}
-	case TaskStateInactive:
-		ok, err := t.machine.CanFire(triggerInactive)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("trask cannot be transitioned to '%s'", nextState.String())
-		}
-	default:
-		return fmt.Errorf("task cannot be transitioned to '%s'", nextState.String())
-	}
-
+func (t *Task) SetNextState(nextState TaskState) {
 	t.nextState = nextState
-
-	return nil
 }
 
 func (t *Task) NextState() TaskState {
@@ -242,11 +223,11 @@ func (t *Task) CurrentState() TaskState {
 // TBD what is the conditions when the task cannot be executed anymore?
 // After how many retries we are giving up?
 func (t *Task) CanRun() bool {
-	return t.failures <= 3
+	return t.Failures <= 3
 }
 
 func (t *Task) Reset() {
-	t.failures = 0
+	t.Failures = 0
 	t.machine.Fire(triggerReady)
 }
 

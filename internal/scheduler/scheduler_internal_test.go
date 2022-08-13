@@ -96,7 +96,8 @@ var _ = Describe("test scheduler", func() {
 		Expect(mockExecutor.StopCount).To(Equal(0))
 		mockExecutor.SendStateToTask("workload1", scheduler.TaskStateExited, false)
 		mockExecutor.SendStateToTask("workload2", scheduler.TaskStateExited, false)
-		<-time.After(5 * time.Second)
+		<-time.After(10 * time.Second)
+		// expect to be restarted
 		Expect(mockExecutor.RunCount).To(Equal(4))
 	})
 
@@ -111,25 +112,25 @@ var _ = Describe("test scheduler", func() {
 		// first failure
 		mockExecutor.SendStateToTask("workload1", scheduler.TaskStateExited, false)
 		mockExecutor.SendStateToTask("workload2", scheduler.TaskStateExited, false)
-		<-time.After(5 * time.Second)
+		<-time.After(10 * time.Second)
 		Expect(mockExecutor.RunCount).To(Equal(4))
 
 		// 2nd failure
 		mockExecutor.SendStateToTask("workload1", scheduler.TaskStateExited, false)
 		mockExecutor.SendStateToTask("workload2", scheduler.TaskStateExited, false)
-		<-time.After(5 * time.Second)
+		<-time.After(10 * time.Second)
 		Expect(mockExecutor.RunCount).To(Equal(6))
 
 		// 3rd failure
 		mockExecutor.SendStateToTask("workload1", scheduler.TaskStateExited, false)
 		mockExecutor.SendStateToTask("workload2", scheduler.TaskStateExited, false)
-		<-time.After(5 * time.Second)
+		<-time.After(10 * time.Second)
 		Expect(mockExecutor.RunCount).To(Equal(8))
 
 		// 3rd failure
 		mockExecutor.SendStateToTask("workload1", scheduler.TaskStateExited, false)
 		mockExecutor.SendStateToTask("workload2", scheduler.TaskStateExited, false)
-		<-time.After(5 * time.Second)
+		<-time.After(10 * time.Second)
 
 		Expect(mockExecutor.RunCount).To(Equal(8))
 	})
