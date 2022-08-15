@@ -3,6 +3,7 @@ package entity
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -63,38 +64,38 @@ func (p PodWorkload) Profiles() []WorkloadProfile {
 }
 
 func (p PodWorkload) String() string {
-	var sb strings.Builder
-
-	fmt.Fprintf(&sb, "name: %s\n", p.Name)
-	fmt.Fprintf(&sb, "namespace: %s\n", p.Namespace)
-	fmt.Fprintf(&sb, "annotations: \n")
-	for k, v := range p.Annotations {
-		fmt.Fprintf(&sb, "key=%s value=%s\n", k, v)
+	json, err := json.Marshal(p)
+	if err != nil {
+		return err.Error()
 	}
-
-	fmt.Fprintf(&sb, "secrets: \n")
-	for k, v := range p.Secrets {
-		fmt.Fprintf(&sb, "key=%s value=%s\n", k, v)
-	}
-
-	fmt.Fprintf(&sb, "labels: \n")
-	for k, v := range p.Secrets {
-		fmt.Fprintf(&sb, "key=%s value=%s\n", k, v)
-	}
-
-	fmt.Fprintf(&sb, "configmaps: \n")
-	for _, c := range p.Configmaps {
-		fmt.Fprintf(&sb, "value=%s\n", c)
-	}
-
-	fmt.Fprintf(&sb, "image registries: %s\n", p.ImageRegistryAuth)
-	fmt.Fprintf(&sb, "specification: %s\n", p.Specification)
-
-	return sb.String()
+	return string(json)
 }
 
 func (p PodWorkload) Hash() string {
-	sum := sha256.Sum256(bytes.NewBufferString(p.String()).Bytes())
+	var sb strings.Builder
+
+	fmt.Fprintf(&sb, "%s", p.Name)
+	fmt.Fprintf(&sb, "%s", p.Namespace)
+	for k, v := range p.Annotations {
+		fmt.Fprintf(&sb, "%s%s", k, v)
+	}
+
+	for k, v := range p.Secrets {
+		fmt.Fprintf(&sb, "%s%s", k, v)
+	}
+
+	for k, v := range p.Labels {
+		fmt.Fprintf(&sb, "%s%s", k, v)
+	}
+
+	for _, c := range p.Configmaps {
+		fmt.Fprintf(&sb, "%s", c)
+	}
+
+	fmt.Fprintf(&sb, "%s", p.ImageRegistryAuth)
+	fmt.Fprintf(&sb, "%s", p.Specification)
+
+	sum := sha256.Sum256(bytes.NewBufferString(sb.String()).Bytes())
 	return fmt.Sprintf("%x", sum)
 }
 
@@ -108,11 +109,11 @@ func (a AnsibleWorkload) Kind() WorkloadKind {
 }
 
 func (a AnsibleWorkload) String() string {
-	var sb strings.Builder
-
-	fmt.Fprintf(&sb, "playbook: %s\n", a.Playbook)
-
-	return sb.String()
+	json, err := json.Marshal(a)
+	if err != nil {
+		return err.Error()
+	}
+	return string(json)
 }
 
 func (a AnsibleWorkload) Hash() string {

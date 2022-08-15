@@ -3,7 +3,9 @@ package entity
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -27,21 +29,29 @@ type DeviceConfigurationMessage struct {
 }
 
 func (m DeviceConfigurationMessage) String() string {
-	var sb strings.Builder
-
-	fmt.Fprintf(&sb, "device_id: %s, ", m.DeviceID)
-	fmt.Fprintf(&sb, "version: %s, ", m.Version)
-	fmt.Fprintf(&sb, "workload monitoring interval: %s, ", m.WorkloadsMonitoringInterval)
-	fmt.Fprintf(&sb, "%s, ", m.Configuration.String())
-	for _, t := range m.Workloads {
-		fmt.Fprintf(&sb, "workload: %s, ", t.String())
+	json, err := json.Marshal(m)
+	if err != nil {
+		return err.Error()
 	}
-
-	return sb.String()
+	return string(json)
 }
 
 func (m DeviceConfigurationMessage) Hash() string {
-	sum := sha256.Sum256(bytes.NewBufferString(m.String()).Bytes())
+	var sb strings.Builder
+
+	fmt.Fprintf(&sb, "%s", m.DeviceID)
+	fmt.Fprintf(&sb, "%s", m.Version)
+	fmt.Fprintf(&sb, "%s", m.WorkloadsMonitoringInterval)
+	fmt.Fprintf(&sb, "%s", m.Configuration.String())
+
+	// sort workloads by ID to be sure we don't have surprises
+	sort.Slice(m.Workloads, func(i, j int) bool {
+		return m.Workloads[i].ID() < m.Workloads[j].ID()
+	})
+	for _, t := range m.Workloads {
+		fmt.Fprintf(&sb, "%s", t.String())
+	}
+	sum := sha256.Sum256(bytes.NewBufferString(sb.String()).Bytes())
 	return fmt.Sprintf("%x", sum)
 }
 
@@ -59,23 +69,22 @@ type DeviceConfiguration struct {
 }
 
 func (d DeviceConfiguration) String() string {
-	var sb strings.Builder
-
-	fmt.Fprintf(&sb, "heartbeat: %s, ", d.Heartbeat.String())
-	fmt.Fprintf(&sb, "os information: %+v, ", d.OsInformation)
-	fmt.Fprintf(&sb, "mounts: , ")
-	for _, m := range d.Mounts {
-		fmt.Fprintf(&sb, "device: %s\\s", m.Device)
-		fmt.Fprintf(&sb, "directory: %s\\s", m.Directory)
-		fmt.Fprintf(&sb, "options: %s\\s", m.Options)
-		fmt.Fprintf(&sb, "type: %s, ", m.Type)
+	json, err := json.Marshal(d)
+	if err != nil {
+		return err.Error()
 	}
-
-	return sb.String()
+	return string(json)
 }
 
 func (d DeviceConfiguration) Hash() string {
-	sum := sha256.Sum256(bytes.NewBufferString(d.String()).Bytes())
+	var sb strings.Builder
+
+	fmt.Fprintf(&sb, "%s", d.Heartbeat.String())
+	fmt.Fprintf(&sb, "%+v", d.OsInformation)
+	for _, m := range d.Mounts {
+		fmt.Fprintf(&sb, "%s%s%s%s", m.Device, m.Directory, m.Options, m.Type)
+	}
+	sum := sha256.Sum256(bytes.NewBufferString(sb.String()).Bytes())
 	return fmt.Sprintf("%x", sum)
 }
 
