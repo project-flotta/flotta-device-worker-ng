@@ -71,6 +71,8 @@ const (
 	TaskStateUnknown
 	// TaskStateInactive indicates that the task is in an inactive state.
 	TaskStateInactive
+	// TaskStateDeletion indicates that the task is being removed from the scheduler.
+	TaskStateDeletion
 
 	triggerReady    = "ready"
 	triggerDeploy   = "deploy"

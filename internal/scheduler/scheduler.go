@@ -18,6 +18,7 @@ const (
 	// action type
 	runAction actionType = iota
 	stopAction
+	deleteAction
 )
 
 //go:generate mockgen -package=scheduler -destination=mock_executor.go --build_flags=--mod=mod . Executor
@@ -183,6 +184,9 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				case TaskStateDeploying:
 					zap.S().Debugw("deploy task", "id", task.Name())
 					s.executionQueue.Push(runAction, task)
+				case TaskStateDeletion:
+					zap.S().Debugw("remove task", "id", task.Name())
+					s.executionQueue.Push(deleteAction, task)
 				default:
 					task.MutateTo(task.NextState())
 				}
@@ -191,8 +195,6 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				execution <- struct{}{}
 			}
 		case <-execution:
-			// clean task marked for deletion
-			s.clean()
 			// execute every task in the execution queue
 			go s.execute(context.Background(), doneExecutionCh)
 			// stop heartbeat while we are consuming the execution queue.
@@ -209,29 +211,31 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 }
 
 func (s *Scheduler) execute(ctx context.Context, doneCh chan struct{}) {
-	ticker := time.NewTicker(1 * time.Second)
 	for s.executionQueue.Size() > 0 {
+		// stopping task has higher priority
+		s.executionQueue.Sort(stopAction)
+		action, task, err := s.executionQueue.Pop()
+		if err != nil {
+			zap.S().Errorw("failed to pop task from queue", "error", err)
+			break
+		}
+		switch action {
+		case stopAction:
+			task.MutateTo(TaskStateStopping)
+			s.executor.Stop(context.Background(), task.Workload)
+		case runAction:
+			task.MutateTo(TaskStateDeploying)
+			future := s.executor.Run(context.Background(), task.Workload)
+			s.futures[task.Hash()] = future
+		case deleteAction:
+			delete(s.futures, task.ID())
+			s.tasks.Delete(task)
+		}
 		select {
-		case <-ticker.C:
-			// stopping task has higher priority
-			s.executionQueue.Sort(stopAction)
-			action, task, err := s.executionQueue.Pop()
-			if err != nil {
-				zap.S().Errorw("failed to pop task from queue", "error", err)
-				break
-			}
-			switch action {
-			case stopAction:
-				task.MutateTo(TaskStateStopping)
-				s.executor.Stop(context.Background(), task.Workload)
-			case runAction:
-				task.MutateTo(TaskStateDeploying)
-				future := s.executor.Run(context.Background(), task.Workload)
-				s.futures[task.Hash()] = future
-			}
 		case <-ctx.Done():
 			doneCh <- struct{}{}
 			return
+		default:
 		}
 	}
 	doneCh <- struct{}{}
@@ -240,24 +244,6 @@ func (s *Scheduler) execute(ctx context.Context, doneCh chan struct{}) {
 // evaluate evaluates task's profiles based on current device profile.
 func (s *Scheduler) evaluate(t *Task) bool {
 	return true
-}
-
-// remove task marked for deletion and which are stopped, exited or unknown
-func (s *Scheduler) clean() {
-	for {
-		dirty := false
-		for i := 0; i < s.tasks.Len(); i++ {
-			if t, ok := s.tasks.Get(i); ok && s.isMarked(t, deletionMark) && (t.CurrentState().OneOf(TaskStateExited, TaskStateUnknown)) {
-				zap.S().Debugw("task removed", "task_id", t.ID())
-				s.tasks.Delete(t)
-				dirty = true
-				break
-			}
-		}
-		if !dirty {
-			break
-		}
-	}
 }
 
 func (s *Scheduler) mark(t *Task, mark string) {
