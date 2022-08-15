@@ -105,6 +105,10 @@ func (s *Store[T]) Add(t T) {
 	s.tasks = append(s.tasks, t)
 }
 
+func (s *Store[T]) ToList() []T {
+	return s.tasks[:]
+}
+
 func (s *Store[T]) clone() *Store[T] {
 	return &Store[T]{
 		tasks: s.tasks[:],

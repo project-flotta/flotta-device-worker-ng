@@ -112,36 +112,38 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 		select {
 		case o := <-input:
 			if o.None {
-				// stop tasks
-				iter := s.tasks.Iter()
-				for iter.HasNext() {
-					task, _ := iter.Next()
-					if !s.isMarked(task, inactiveMark) && (task.CurrentState() == TaskStateRunning || task.CurrentState() == TaskStateDeploying) {
-						s.mark(task, stopMark)
-						s.mark(task, deletionMark)
-					}
-				}
+				s.removeTasks(s.tasks.ToList())
 				break
 			}
 			// add tasks
+			m := make(map[string]struct{}) // holds temporary the new task
 			for _, w := range o.Value {
+				m[w.Hash()] = struct{}{}
 				task := NewTask(w.ID(), w)
 				if oldTask, found := s.tasks.FindByName(task.Name()); found {
 					if oldTask.Hash() == task.Hash() {
 						continue
 					}
 					// something changed in the workload. Stop the old one and start the new one
-					zap.S().Infow("workload changed", "name", oldTask.Name)
-					// stop the old one and remove it from store
-					s.mark(oldTask, stopMark)
-					s.mark(oldTask, deletionMark)
+					zap.S().Infow("workload changed", "id", oldTask.Name)
+					s.removeTask(oldTask)
 				}
 				s.tasks.Add(task)
 			}
+			// check if there are task removed
+			it := s.tasks.Iter()
+			for it.HasNext() {
+				task, _ := it.Next()
+				if _, found := m[task.Hash()]; !found {
+					// something changed in the workload. Stop the old one and start the new one
+					zap.S().Infow("remove workload", "id", task.ID())
+					s.removeTask(task)
+				}
+			}
 		case <-mark:
-			iter := s.tasks.Iter()
-			for iter.HasNext() {
-				task, _ := iter.Next()
+			it := s.tasks.Iter()
+			for it.HasNext() {
+				task, _ := it.Next()
 				// poll his future if any
 				if future, found := s.futures[task.ID()]; found {
 					result, _ := future.Poll()
@@ -166,9 +168,9 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			}
 			mutate <- struct{}{}
 		case <-mutate:
-			taskIter := s.tasks.Iter()
-			for taskIter.HasNext() {
-				task, _ := taskIter.Next()
+			it := s.tasks.Iter()
+			for it.HasNext() {
+				task, _ := it.Next()
 
 				if !s.mutator.Mutate(task) {
 					continue
@@ -269,4 +271,15 @@ func (s *Scheduler) markWithValue(t *Task, mark string, value interface{}) {
 func (s *Scheduler) isMarked(t *Task, mark string) bool {
 	_, marked := t.GetMark(mark)
 	return marked
+}
+
+func (s *Scheduler) removeTasks(tasks []*Task) {
+	for _, t := range tasks {
+		s.removeTask(t)
+	}
+}
+
+func (s *Scheduler) removeTask(task *Task) {
+	s.mark(task, stopMark)
+	s.mark(task, deletionMark)
 }

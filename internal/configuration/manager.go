@@ -58,6 +58,8 @@ func (c *Manager) SetConfiguration(e entity.DeviceConfigurationMessage) {
 		return
 	}
 
+	zap.S().Debugw("configurations", "old conf", c.conf, "new conf", e)
+
 	// send task to scheduler
 	o := entity.Option[[]entity.Workload]{
 		Value: e.Workloads,
@@ -67,7 +69,6 @@ func (c *Manager) SetConfiguration(e entity.DeviceConfigurationMessage) {
 		o.None = true
 	}
 
-	zap.S().Debugw("new workloads", "workloads", o)
 	c.SchedulerCh <- entity.Message{
 		Kind:    entity.WorkloadConfigurationMessage,
 		Payload: o,

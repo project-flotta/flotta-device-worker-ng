@@ -3,7 +3,6 @@ package entity
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -64,12 +63,34 @@ func (p PodWorkload) Profiles() []WorkloadProfile {
 }
 
 func (p PodWorkload) String() string {
-	json, err := json.Marshal(p)
-	if err != nil {
-		return err.Error()
+	var sb strings.Builder
+
+	fmt.Fprintf(&sb, "name: %s\n", p.Name)
+	fmt.Fprintf(&sb, "namespace: %s\n", p.Namespace)
+	fmt.Fprintf(&sb, "annotations: \n")
+	for k, v := range p.Annotations {
+		fmt.Fprintf(&sb, "key=%s value=%s\n", k, v)
 	}
 
-	return string(json)
+	fmt.Fprintf(&sb, "secrets: \n")
+	for k, v := range p.Secrets {
+		fmt.Fprintf(&sb, "key=%s value=%s\n", k, v)
+	}
+
+	fmt.Fprintf(&sb, "labels: \n")
+	for k, v := range p.Secrets {
+		fmt.Fprintf(&sb, "key=%s value=%s\n", k, v)
+	}
+
+	fmt.Fprintf(&sb, "configmaps: \n")
+	for _, c := range p.Configmaps {
+		fmt.Fprintf(&sb, "value=%s\n", c)
+	}
+
+	fmt.Fprintf(&sb, "image registries: %s\n", p.ImageRegistryAuth)
+	fmt.Fprintf(&sb, "specification: %s\n", p.Specification)
+
+	return sb.String()
 }
 
 func (p PodWorkload) Hash() string {

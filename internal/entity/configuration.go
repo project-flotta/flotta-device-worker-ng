@@ -3,7 +3,6 @@ package entity
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -28,12 +27,17 @@ type DeviceConfigurationMessage struct {
 }
 
 func (m DeviceConfigurationMessage) String() string {
-	json, err := json.Marshal(m)
-	if err != nil {
-		return err.Error()
+	var sb strings.Builder
+
+	fmt.Fprintf(&sb, "device_id: %s, ", m.DeviceID)
+	fmt.Fprintf(&sb, "version: %s, ", m.Version)
+	fmt.Fprintf(&sb, "workload monitoring interval: %s, ", m.WorkloadsMonitoringInterval)
+	fmt.Fprintf(&sb, "%s, ", m.Configuration.String())
+	for _, t := range m.Workloads {
+		fmt.Fprintf(&sb, "workload: %s, ", t.String())
 	}
 
-	return string(json)
+	return sb.String()
 }
 
 func (m DeviceConfigurationMessage) Hash() string {
