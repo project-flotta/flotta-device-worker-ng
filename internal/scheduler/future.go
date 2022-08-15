@@ -2,7 +2,8 @@ package scheduler
 
 import (
 	"fmt"
-	"sync"
+
+	"github.com/tupyy/device-worker-ng/internal/scheduler/containers"
 )
 
 type Result[T any] struct {
@@ -22,8 +23,7 @@ type Future[T any] struct {
 	input    chan T
 	done     bool
 	hasValue bool
-	value    T
-	lock     sync.Mutex
+	values   containers.Queue[T]
 }
 
 func (f *Future[T]) Resolved() bool {
@@ -32,33 +32,28 @@ func (f *Future[T]) Resolved() bool {
 
 func NewFuture[T any](input chan T) *Future[T] {
 	f := &Future[T]{
-		input:    input,
-		hasValue: false,
-		done:     false,
+		input: input,
+		done:  false,
 	}
 
 	go func() {
-		for {
-			value, more := <-f.input
-			f.done = !more
-			if !more {
-				return
-			}
-			f.set(value, true)
+		for value := range f.input {
+			f.values.Push(value)
 		}
+		f.done = true
 	}()
 
 	return f
 }
 
 func (f *Future[T]) Poll() (Result[T], error) {
-	if f.done && !f.hasValue {
+	if f.done && f.values.Size() == 0 {
 		return Result[T]{}, fmt.Errorf("future already resolved")
 	}
 
-	if f.hasValue {
+	if f.values.Size() > 0 {
 		return Result[T]{
-			Value: f.consume(),
+			Value: f.values.Pop(),
 			ready: true,
 		}, nil
 	}
@@ -66,19 +61,4 @@ func (f *Future[T]) Poll() (Result[T], error) {
 	return Result[T]{
 		ready: false,
 	}, nil
-}
-
-func (f *Future[T]) set(v T, hasValue bool) {
-	f.lock.Lock()
-	defer f.lock.Unlock()
-
-	f.hasValue = hasValue
-	f.value = v
-}
-
-func (f *Future[T]) consume() T {
-	val := f.value
-	var none T
-	f.set(none, false)
-	return val
 }

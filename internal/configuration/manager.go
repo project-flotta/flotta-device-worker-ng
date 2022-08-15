@@ -58,9 +58,6 @@ func (c *Manager) SetConfiguration(e entity.DeviceConfigurationMessage) {
 		return
 	}
 
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
 	// send task to scheduler
 	o := entity.Option[[]entity.Workload]{
 		Value: e.Workloads,
@@ -77,11 +74,11 @@ func (c *Manager) SetConfiguration(e entity.DeviceConfigurationMessage) {
 	}
 
 	// send profiles to state manager
-	if deviceProfiles, err := c.createDeviceProfiles(c.conf); err != nil {
-		zap.S().Errorw("cannot parse profiles", "error", err)
-	} else {
-		c.StateManagerCh <- entity.Message{Kind: entity.ProfileConfigurationMessage, Payload: deviceProfiles}
-	}
+	// if deviceProfiles, err := c.createDeviceProfiles(c.conf); err != nil {
+	// 	zap.S().Errorw("cannot parse profiles", "error", err)
+	// } else {
+	// 	c.StateManagerCh <- entity.Message{Kind: entity.ProfileConfigurationMessage, Payload: deviceProfiles}
+	// }
 
 	c.conf = e
 }

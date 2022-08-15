@@ -1,8 +1,7 @@
 package entity
 
 import (
-	"fmt"
-	"strings"
+	"encoding/json"
 	"time"
 )
 
@@ -14,12 +13,12 @@ type HeartbeatConfiguration struct {
 }
 
 func (h HeartbeatConfiguration) String() string {
-	var sb strings.Builder
+	json, err := json.Marshal(h)
+	if err != nil {
+		return err.Error()
+	}
 
-	fmt.Fprintf(&sb, "hardware profile: %v\n", h.HardwareProfile)
-	fmt.Fprintf(&sb, "period: %s", h.Period.String())
-
-	return sb.String()
+	return string(json)
 }
 
 type Scope int

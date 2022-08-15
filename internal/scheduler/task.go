@@ -25,8 +25,6 @@ func (ts TaskState) String() string {
 		return "running"
 	case TaskStateStopping:
 		return "stopping"
-	case TaskStateStopped:
-		return "stopped"
 	case TaskStateExited:
 		return "exited"
 	case TaskStateInactive:
@@ -56,9 +54,7 @@ const (
 	TaskStateRunning
 	// TaskStateStopping indicates that the task is about to be stopped
 	TaskStateStopping
-	// TaskStateStopped indicates that the task is stopped
-	TaskStateStopped
-	// TaskStateExited indicates that the task has been stopped with an error
+	// TaskStateExited indicates that the task has been stopped
 	TaskStateExited
 	// TaskStateUnknown indicates that the task is in an unknown state
 	TaskStateUnknown
@@ -70,8 +66,7 @@ const (
 	triggerDeployed = "deployed"
 	triggerRun      = "run"
 	triggerStop     = "stop"
-	triggerStopped  = "stopped"
-	triggerError    = "error"
+	triggerExit     = "stopped"
 	triggerInactive = "inactive"
 	triggerUnknown  = "unknown"
 )
@@ -155,28 +150,22 @@ func _new(name string, w entity.Workload) *Task {
 	t.machine.Configure(TaskStateDeploying).
 		Permit(triggerDeployed, TaskStateDeployed).
 		Permit(triggerReady, TaskStateReady).
-		Permit(triggerError, TaskStateExited)
+		Permit(triggerExit, TaskStateExited)
 
 	t.machine.Configure(TaskStateDeployed).
 		Permit(triggerRun, TaskStateRunning).
-		Permit(triggerError, TaskStateExited).
+		Permit(triggerExit, TaskStateExited).
 		Permit(triggerUnknown, TaskStateUnknown).
 		Permit(triggerStop, TaskStateStopping)
 
 	t.machine.Configure(TaskStateRunning).
 		Permit(triggerStop, TaskStateStopping).
-		Permit(triggerStopped, TaskStateStopped).
-		Permit(triggerError, TaskStateExited).
+		Permit(triggerExit, TaskStateExited).
 		Permit(triggerUnknown, TaskStateUnknown)
 
 	t.machine.Configure(TaskStateStopping).
 		Permit(triggerReady, TaskStateReady).
-		Permit(triggerStopped, TaskStateStopped)
-
-	t.machine.Configure(TaskStateStopped).
-		Permit(triggerDeploy, TaskStateDeploying).
-		Permit(triggerReady, TaskStateReady).
-		Permit(triggerInactive, TaskStateInactive)
+		Permit(triggerExit, TaskStateExited)
 
 	t.machine.Configure(TaskStateExited).
 		OnEntry(func(ctx context.Context, args ...interface{}) error {
@@ -201,7 +190,7 @@ func _new(name string, w entity.Workload) *Task {
 
 	t.machine.OnTransitioned(func(ctx context.Context, tt stateMachine.Transition) {
 		//		fmt.Printf("task %s transitioned from %s to %s\n", t.ID(), tt.Source, tt.Destination)
-		zap.S().Debugf("task %s transitioned from %s to %s", t.name, tt.Destination, tt.Source)
+		zap.S().Debugf("task %s transitioned from %s to %s", t.name, tt.Source, tt.Destination)
 	})
 
 	return &t
@@ -242,10 +231,8 @@ func (t *Task) MutateTo(s TaskState) {
 		err = t.machine.Fire(triggerRun)
 	case TaskStateStopping:
 		err = t.machine.Fire(triggerStop)
-	case TaskStateStopped:
-		err = t.machine.Fire(triggerStopped)
 	case TaskStateExited:
-		err = t.machine.Fire(triggerError)
+		err = t.machine.Fire(triggerExit)
 	case TaskStateInactive:
 		err = t.machine.Fire(triggerInactive)
 	case TaskStateUnknown:
@@ -268,12 +255,11 @@ func (t *Task) String() string {
 		Workload     string `json:"workload"`
 		CurrentState string `json:"current_state"`
 		NextState    string `json:"next_state"`
-		Enabled      bool   `json:"enabled"`
 	}{
 		Name:         t.name,
 		Workload:     t.Workload.String(),
-		NextState:    t.NextState().String(),
 		CurrentState: t.CurrentState().String(),
+		NextState:    t.NextState().String(),
 	}
 
 	json, err := json.Marshal(task)

@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"testing"
-	"time"
 
 	. "github.com/onsi/gomega"
 )
@@ -23,28 +22,22 @@ func TestFuture(t *testing.T) {
 	g.Expect(result.IsPending()).To(Equal(true))
 	g.Expect(err).To(BeNil())
 
-	input <- "done"
-	<-time.After(1 * time.Second)
+	input <- "msg"
+	input <- "msg2"
+	input <- "msg3"
 
-	result, err = future.Poll()
-	g.Expect(result.IsReady()).To(Equal(true))
-	g.Expect(result.Value).To(Equal("done"))
+	r, err := future.Poll()
+	g.Expect(r.Value).To(Equal("msg"))
 	g.Expect(err).To(BeNil())
 
-	result, err = future.Poll()
-	g.Expect(result.IsReady()).To(Equal(false))
+	r, err = future.Poll()
+	g.Expect(r.Value).To(Equal("msg2"))
 	g.Expect(err).To(BeNil())
 
-	input <- "second value"
-	close(input)
-	<-time.After(1 * time.Second)
-	result, err = future.Poll()
-	g.Expect(result.IsReady()).To(Equal(true))
-	g.Expect(result.Value).To(Equal("second value"))
-	g.Expect(future.Resolved()).To(BeTrue())
+	r, err = future.Poll()
+	g.Expect(r.Value).To(Equal("msg3"))
 	g.Expect(err).To(BeNil())
 
-	result, err = future.Poll()
-	g.Expect(err).ToNot(BeNil())
-
+	r, err = future.Poll()
+	g.Expect(r.IsPending()).To(BeTrue())
 }

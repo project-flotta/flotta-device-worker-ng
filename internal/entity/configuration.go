@@ -3,6 +3,7 @@ package entity
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -27,17 +28,12 @@ type DeviceConfigurationMessage struct {
 }
 
 func (m DeviceConfigurationMessage) String() string {
-	var sb strings.Builder
-
-	fmt.Fprintf(&sb, "device_id: %s\n", m.DeviceID)
-	fmt.Fprintf(&sb, "version: %s\n", m.Version)
-	fmt.Fprintf(&sb, "workload monitoring interval: %s\n", m.WorkloadsMonitoringInterval)
-	fmt.Fprintf(&sb, "%s\n", m.Configuration.String())
-	for _, t := range m.Workloads {
-		fmt.Fprintf(&sb, "workload: %s\n", t.String())
+	json, err := json.Marshal(m)
+	if err != nil {
+		return err.Error()
 	}
 
-	return sb.String()
+	return string(json)
 }
 
 func (m DeviceConfigurationMessage) Hash() string {
@@ -61,14 +57,14 @@ type DeviceConfiguration struct {
 func (d DeviceConfiguration) String() string {
 	var sb strings.Builder
 
-	fmt.Fprintf(&sb, "heartbeat: %s\n", d.Heartbeat.String())
-	fmt.Fprintf(&sb, "os information: %+v\n", d.OsInformation)
-	fmt.Fprintf(&sb, "mounts: \n")
+	fmt.Fprintf(&sb, "heartbeat: %s, ", d.Heartbeat.String())
+	fmt.Fprintf(&sb, "os information: %+v, ", d.OsInformation)
+	fmt.Fprintf(&sb, "mounts: , ")
 	for _, m := range d.Mounts {
 		fmt.Fprintf(&sb, "device: %s\\s", m.Device)
 		fmt.Fprintf(&sb, "directory: %s\\s", m.Directory)
 		fmt.Fprintf(&sb, "options: %s\\s", m.Options)
-		fmt.Fprintf(&sb, "type: %s\n", m.Type)
+		fmt.Fprintf(&sb, "type: %s, ", m.Type)
 	}
 
 	return sb.String()

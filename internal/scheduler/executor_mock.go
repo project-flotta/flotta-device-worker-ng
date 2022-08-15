@@ -35,7 +35,7 @@ func (e *MockExecutor) Stop(ctx context.Context, w entity.Workload) {
 		return
 	}
 
-	ch <- TaskStateStopped
+	ch <- TaskStateExited
 }
 
 func (e *MockExecutor) SendStateToTask(id string, state TaskState, resolveFuture bool) {
@@ -44,7 +44,7 @@ func (e *MockExecutor) SendStateToTask(id string, state TaskState, resolveFuture
 		return
 	}
 	ch <- state
-	if state == TaskStateStopped || state == TaskStateExited || state == TaskStateUnknown {
+	if state == TaskStateExited || state == TaskStateUnknown {
 		close(ch)
 		delete(e.futureCh, id)
 	}

@@ -1,18 +1,16 @@
 package scheduler
 
 import (
-	"errors"
-
 	"go.uber.org/zap"
 )
 
 const (
 	// marks type
-	deletion   string = "deletion"
-	stop       string = "stop"
-	deploy     string = "deploy"
-	inactive   string = "inactive"
-	mutateMark string = "mutate"
+	deletionMark string = "deletion"
+	stopMark     string = "stop"
+	deployMark   string = "deploy"
+	inactiveMark string = "inactive"
+	mutateMark   string = "mutate"
 )
 
 // RestartGuard is the function which return true if the task can be restarted.
@@ -39,7 +37,7 @@ func NewMutatorWithRestartGuard(r RestartGuard) *mutator {
 /*
 	Mutate tries to find what is the next state based on marks and/or current state.
 */
-func (m *mutator) Mutate(t *Task) (bool, error) {
+func (m *mutator) Mutate(t *Task) bool {
 	// process task with marks
 	for _, mark := range t.GetMarks() {
 		switch mark {
@@ -47,32 +45,42 @@ func (m *mutator) Mutate(t *Task) (bool, error) {
 			val, ok := t.GetMark(mark)
 			if !ok {
 				zap.S().Warnw("mutation value not found", "task_id", t.ID(), "mark", mark)
-				return false, errors.New("mutation value not found")
+				return false
+			}
+			// cannot deploy from inactive state
+			if t.CurrentState() == TaskStateInactive {
+				t.RemoveMark(mutateMark)
+				zap.S().Debugw("task cannot be restarted from inactive state", "task_id", t.ID())
+				return false
 			}
 			// if the task is exited or in unknown state and cannot be restarted.
 			if t.CurrentState().OneOf(TaskStateExited, TaskStateUnknown) && !m.canRestart(t) {
-				t.SetNextState(t.CurrentState())
-				return false, nil
+				t.RemoveMark(mutateMark)
+				zap.S().Warnw("task cannot be restarted because of too many failures. It will be transitioned to inactive", "task_id", t.ID())
+				t.SetNextState(TaskStateInactive)
+				return true
 			}
 			t.SetNextState(val.(TaskState))
 			t.RemoveMark(mutateMark)
-			return true, nil
-		case stop:
+			return true
+		case stopMark:
 			if !t.CurrentState().OneOf(TaskStateDeploying, TaskStateDeployed, TaskStateRunning) {
-				return false, nil
+				zap.S().Errorw("transition to exit is allowed only from deploying, deployed or running state", "task_id", t.ID())
+				return false
 			}
 			t.SetNextState(TaskStateStopping)
-			t.RemoveMark(stop)
-			return true, nil
-		case inactive:
-			if !t.CurrentState().OneOf(TaskStateReady, TaskStateStopped, TaskStateExited, TaskStateUnknown) {
-				return false, nil
+			t.RemoveMark(stopMark)
+			return true
+		case inactiveMark:
+			if !t.CurrentState().OneOf(TaskStateReady, TaskStateExited, TaskStateUnknown) {
+				zap.S().Errorw("transition to inactive is allowed only from ready, exited or unknown state", "task_id", t.ID())
+				return false
 			}
-			// transition to inactive is permitted only from ready, stopped, exit or unknown state.
+			// transition to inactive is permitted only from ready, exit or unknown state.
 			// a running job must be stopped before make it transition to inactive
 			t.SetNextState(TaskStateInactive)
-			return true, nil
+			return true
 		}
 	}
-	return false, nil
+	return false
 }

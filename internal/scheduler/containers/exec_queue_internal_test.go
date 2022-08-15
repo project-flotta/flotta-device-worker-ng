@@ -6,9 +6,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestQueue(t *testing.T) {
+func TestExecQueue(t *testing.T) {
 	g := NewWithT(t)
-	q := Queue[int, int]{}
+	q := ExecutionQueue[int, int]{}
 
 	q.Push(1, 1)
 	q.Push(2, 2)
@@ -30,9 +30,9 @@ func TestQueue(t *testing.T) {
 	g.Expect(q.Size()).To(Equal(2))
 }
 
-func TestQueue2(t *testing.T) {
+func TestExecQueue2(t *testing.T) {
 	g := NewWithT(t)
-	q := Queue[int, int]{}
+	q := ExecutionQueue[int, int]{}
 
 	q.Push(1, 1)
 	q.Push(2, 2)

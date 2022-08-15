@@ -27,6 +27,7 @@ type Podman interface {
 type Executor struct {
 	podman  Podman
 	futures map[string]chan scheduler.TaskState
+	ids     map[string]string
 }
 
 func New() (*Executor, error) {
@@ -37,29 +38,88 @@ func New() (*Executor, error) {
 	return &Executor{
 		podman:  podman,
 		futures: make(map[string]chan scheduler.TaskState),
+		ids:     make(map[string]string),
 	}, nil
 }
 
 func (e *Executor) Run(ctx context.Context, w entity.Workload) *scheduler.Future[scheduler.TaskState] {
-	zap.S().Infow("executor run called", "workload", w)
-	pod := w.(entity.PodWorkload)
+	workload := w.(entity.PodWorkload)
 
 	ch := make(chan scheduler.TaskState)
 	future := scheduler.NewFuture(ch)
-	e.futures[w.Hash()] = ch
-	report, err := e.podman.Run(pod.Specification, pod.ImageRegistryAuth, pod.Annotations)
+	e.futures[w.ID()] = ch
+
+	pod, err := toPod(workload)
+	if err != nil {
+		zap.S().Errorw("failed to create pod", "error", err)
+		e.sendState(w.ID(), scheduler.TaskStateExited, true)
+		return future
+	}
+
+	yaml, err := toPodYaml(pod, workload.Configmaps)
+	if err != nil {
+		zap.S().Errorw("failed to create pod", "error", err)
+		e.sendState(w.ID(), scheduler.TaskStateExited, true)
+		return future
+	}
+
+	zap.S().Debugw("pod spec", "spec", string(yaml))
+
+	// save file
+	tmp, _ := os.CreateTemp("/home/cosmin/tmp", "flotta-")
+	tmp.Write(yaml)
+	tmp.Close()
+
+	report, err := e.podman.Run(tmp.Name(), workload.ImageRegistryAuth, workload.Annotations)
 	if err != nil {
 		zap.S().Errorw("failed to execute workload", "error", err, "report", report)
-		ch <- scheduler.TaskStateExited
+		e.sendState(w.ID(), scheduler.TaskStateExited, true)
 		return future
 	}
 
 	zap.S().Infow("workload started", "hash", w.Hash(), "report", report)
 	ch <- scheduler.TaskStateDeployed
 
+	err = e.podman.Start(report[0].Id)
+	if err != nil {
+		e.sendState(w.ID(), scheduler.TaskStateExited, true)
+		return future
+	}
+
+	e.sendState(w.ID(), scheduler.TaskStateRunning, false)
+	e.ids[w.ID()] = report[0].Id
+
 	return future
 }
 
 func (e *Executor) Stop(ctx context.Context, w entity.Workload) {
-	zap.S().Infow("executor stop called", "workload", w)
+	podID := e.ids[w.ID()]
+	err := e.podman.Stop(podID)
+	if err != nil {
+		zap.S().Errorw("failed to stop pod", "error", err, "pod_id", podID, "workload_id", w.ID())
+		return
+	}
+
+	err = e.podman.Remove(podID)
+	if err != nil {
+		zap.S().Errorw("failed to remove pod", "error", err, "pod_id", podID, "workload_id", w.ID())
+		return
+	}
+
+	e.sendState(w.ID(), scheduler.TaskStateExited, false)
+
+	zap.S().Infow("workload stopped", "workload_id", w.ID())
+}
+
+func (e *Executor) sendState(workloadID string, state scheduler.TaskState, removeFuture bool) {
+	ch, found := e.futures[workloadID]
+	if !found {
+		return
+	}
+
+	ch <- state
+	if removeFuture {
+		close(ch)
+		delete(e.futures, workloadID)
+	}
 }

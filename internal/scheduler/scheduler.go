@@ -27,7 +27,7 @@ type Executor interface {
 }
 
 type Mutator interface {
-	Mutate(t *Task) (mutated bool, err error)
+	Mutate(t *Task) (mutated bool)
 }
 
 type Scheduler struct {
@@ -43,7 +43,7 @@ type Scheduler struct {
 	// runCancel is the cancel function of the run goroutine
 	runCancel context.CancelFunc
 	// executionQueue holds the tasks which must be executed by executor
-	executionQueue *containers.Queue[actionType, *Task]
+	executionQueue *containers.ExecutionQueue[actionType, *Task]
 }
 
 // New creates a new scheduler with the default heartbeat period of 2 seconds.
@@ -60,7 +60,7 @@ func newExecutor(executor Executor, heartbeatPeriod time.Duration) *Scheduler {
 	return &Scheduler{
 		tasks:          containers.NewStore[*Task](),
 		futures:        make(map[string]*Future[TaskState]),
-		executionQueue: containers.NewQueue[actionType, *Task](),
+		executionQueue: containers.NewExecutionQueue[actionType, *Task](),
 		executor:       executor,
 		mutator:        NewMutator(), // mutator with standard RestartGuard
 	}
@@ -71,7 +71,6 @@ func (s *Scheduler) Start(ctx context.Context, input chan entity.Message, profil
 	s.runCancel = cancel
 
 	taskCh := make(chan entity.Option[[]entity.Workload])
-	go s.run(runCtx, taskCh, profileUpdateCh)
 	go func(ctx context.Context) {
 		for {
 			select {
@@ -89,6 +88,7 @@ func (s *Scheduler) Start(ctx context.Context, input chan entity.Message, profil
 			}
 		}
 	}(runCtx)
+	go s.run(runCtx, taskCh, profileUpdateCh)
 }
 
 func (s *Scheduler) Stop(ctx context.Context) {
@@ -116,8 +116,9 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				iter := s.tasks.Iter()
 				for iter.HasNext() {
 					task, _ := iter.Next()
-					if !s.isMarked(task, inactive) && (task.CurrentState() == TaskStateRunning || task.CurrentState() == TaskStateDeploying) {
-						s.mark(task, stop)
+					if !s.isMarked(task, inactiveMark) && (task.CurrentState() == TaskStateRunning || task.CurrentState() == TaskStateDeploying) {
+						s.mark(task, stopMark)
+						s.mark(task, deletionMark)
 					}
 				}
 				break
@@ -132,8 +133,8 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					// something changed in the workload. Stop the old one and start the new one
 					zap.S().Infow("workload changed", "name", oldTask.Name)
 					// stop the old one and remove it from store
-					s.mark(oldTask, stop)
-					s.mark(oldTask, deletion)
+					s.mark(oldTask, stopMark)
+					s.mark(oldTask, deletionMark)
 				}
 				s.tasks.Add(task)
 			}
@@ -151,11 +152,12 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 
 					// future is resolved when task has either been stopped or exited.
 					if future.Resolved() {
+						zap.S().Debugw("future resolved", "id", task.Hash())
 						delete(s.futures, task.ID())
 					}
 					continue
 				}
-				// no future yet meaning the task has not been deployed yet.
+				// no future yet meaning the task has not been deployed yet or it exited.
 				// first evaluate task. if true than deploy it.
 				// evaluate the task
 				if s.evaluate(task) {
@@ -168,14 +170,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			for taskIter.HasNext() {
 				task, _ := taskIter.Next()
 
-				mutated, err := s.mutator.Mutate(task)
-				if err != nil {
-					// TODO define behavior here what to do if the mutation fails
-					zap.S().Errorf("mutation task '%s' failed: %s", task.Name(), err)
-					continue
-				}
-
-				if !mutated {
+				if !s.mutator.Mutate(task) {
 					continue
 				}
 
@@ -195,10 +190,10 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				execution <- struct{}{}
 			}
 		case <-execution:
-			// clean task marked for deletion
-			s.clean()
 			// execute every task in the execution queue
 			go s.execute(context.Background(), doneExecutionCh)
+			// clean task marked for deletion
+			s.clean()
 			// stop heartbeat while we are consuming the execution queue.
 			// Once is done, reset the timer.
 			heartbeat.Stop()
@@ -250,7 +245,8 @@ func (s *Scheduler) clean() {
 	for {
 		dirty := false
 		for i := 0; i < s.tasks.Len(); i++ {
-			if t, ok := s.tasks.Get(i); ok && s.isMarked(t, deletion) && (t.CurrentState() == TaskStateStopped || t.CurrentState() == TaskStateExited || t.CurrentState() == TaskStateUnknown) {
+			if t, ok := s.tasks.Get(i); ok && s.isMarked(t, deletionMark) && (t.CurrentState().OneOf(TaskStateExited, TaskStateUnknown)) {
+				zap.S().Debugw("task removed", "task_id", t.ID())
 				s.tasks.Delete(t)
 				dirty = true
 				break
