@@ -116,7 +116,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				break
 			}
 			// add tasks
-			m := make(map[string]struct{}) // holds temporary the new task
+			m := make(map[string]struct{}) // holds temporary the new tasks
 			for _, w := range o.Value {
 				m[w.Hash()] = struct{}{}
 				task := NewTask(w.ID(), w)
@@ -135,7 +135,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			for it.HasNext() {
 				task, _ := it.Next()
 				if _, found := m[task.Hash()]; !found {
-					// something changed in the workload. Stop the old one and start the new one
+					// task was removed from the manifest.
 					zap.S().Infow("remove workload", "id", task.ID())
 					s.removeTask(task)
 				}
@@ -161,7 +161,6 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				}
 				// no future yet meaning the task has not been deployed yet or it exited.
 				// first evaluate task. if true than deploy it.
-				// evaluate the task
 				if s.evaluate(task) {
 					s.markWithValue(task, mutateMark, TaskStateDeploying)
 				}
@@ -188,14 +187,14 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					task.MutateTo(task.NextState())
 				}
 			}
-			if s.tasks.Len() > 0 {
+			if s.executionQueue.Size() > 0 {
 				execution <- struct{}{}
 			}
 		case <-execution:
-			// execute every task in the execution queue
-			go s.execute(context.Background(), doneExecutionCh)
 			// clean task marked for deletion
 			s.clean()
+			// execute every task in the execution queue
+			go s.execute(context.Background(), doneExecutionCh)
 			// stop heartbeat while we are consuming the execution queue.
 			// Once is done, reset the timer.
 			heartbeat.Stop()
@@ -238,6 +237,7 @@ func (s *Scheduler) execute(ctx context.Context, doneCh chan struct{}) {
 	doneCh <- struct{}{}
 }
 
+// evaluate evaluates task's profiles based on current device profile.
 func (s *Scheduler) evaluate(t *Task) bool {
 	return true
 }
