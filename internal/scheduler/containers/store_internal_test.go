@@ -13,6 +13,10 @@ func (e element) ID() string {
 	return fmt.Sprintf("%d", e)
 }
 
+func (e element) Name() string {
+	return fmt.Sprintf("%d", e)
+}
+
 func TestStore(t *testing.T) {
 	g := NewWithT(t)
 	store := NewStore[element]()
@@ -34,7 +38,7 @@ func TestStore(t *testing.T) {
 	g.Expect(ko).To(BeFalse())
 
 	// find 2
-	_, ok := store.Find("2")
+	_, ok := store.FindByName("2")
 	g.Expect(ok).To(BeTrue())
 
 	// delete 2
