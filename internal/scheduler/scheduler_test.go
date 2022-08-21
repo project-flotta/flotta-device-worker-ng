@@ -105,36 +105,24 @@ var _ = Describe("test scheduler", func() {
 
 		// first failure
 		mockExecutor.SendStateToTask("workload1", task.ExitedState, false)
-		<-time.After(10 * time.Second)
+		<-time.After(5 * time.Second)
 		Expect(mockExecutor.RunCount).To(Equal(2))
 
 		// 2nd failure
 		mockExecutor.SendStateToTask("workload1", task.ExitedState, false)
-		<-time.After(10 * time.Second)
+		<-time.After(5 * time.Second)
 		Expect(mockExecutor.RunCount).To(Equal(3))
 
 		// 3rd failure
 		mockExecutor.SendStateToTask("workload1", task.ExitedState, false)
-		<-time.After(10 * time.Second)
+		<-time.After(5 * time.Second)
 		Expect(mockExecutor.RunCount).To(Equal(4))
 
-		// 3rd failure
+		// 4rd failure
 		mockExecutor.SendStateToTask("workload1", task.ExitedState, false)
-		<-time.After(10 * time.Second)
+		<-time.After(5 * time.Second)
 
-		Expect(mockExecutor.RunCount).To(Equal(5))
-	})
-
-	It("test workloads which transitioned to unknown", func() {
-		s.Start(context.Background(), input, profileCh)
-
-		input <- message
-		<-time.After(10 * time.Second)
-		Expect(mockExecutor.RunCount).To(Equal(1))
-		Expect(mockExecutor.StopCount).To(Equal(0))
-		mockExecutor.SendStateToTask("workload1", task.UnknownState, false)
-		<-time.After(10 * time.Second)
-		Expect(mockExecutor.RunCount).To(Equal(2))
+		Expect(mockExecutor.RunCount).To(Equal(4))
 	})
 
 	It("test workloads which are modified by the operator", func() {

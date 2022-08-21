@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
@@ -286,8 +287,14 @@ func (s *Scheduler) mutate(t task.Task) (bool, error) {
 		nextState = task.InactiveState
 		edgeType = task.MarkBasedEdgeType
 	case deployMark:
-		nextState = task.DeployingState
-		edgeType = task.MarkBasedEdgeType
+		// hack to get the task restarted until we have a graph that detect backedges
+		// TODO fix this when graph is fixed
+		t.PopMark()
+		t.SetCurrentState(task.ReadyState)
+		if err := t.SetNextState(task.DeployingState); err != nil {
+			return false, err
+		}
+		return true, nil
 	case nextStateMark:
 		nextState = task.FromString(mark.Value)
 		edgeType = task.EventBasedEdgeType
@@ -320,7 +327,11 @@ func (s *Scheduler) advanceToState(t task.Task, state task.State, edgeType task.
 	// loop though all the paths and see how far we can get walking *only* on the edge of type 'edgeType'
 	// we stop at the last state which has edge of type 'edgeType'
 	// the state with the lowest score is returned or error if we didn't find anything
-	results := make(map[task.State]int) // we hold the task and the distance.
+	type result struct {
+		state    task.State
+		distance int
+	}
+	results := []result{}
 	for _, path := range paths {
 		var (
 			pathScore int
@@ -334,21 +345,11 @@ func (s *Scheduler) advanceToState(t task.Task, state task.State, edgeType task.
 				state = nextState
 			}
 		}
-		if oldScore, ok := results[state]; ok {
-			if oldScore > pathScore {
-				results[state] = pathScore
-			}
-		} else {
-			results[state] = pathScore
-		}
+		results = append(results, result{
+			state:    state,
+			distance: pathScore,
+		})
 	}
-	var ss task.State
-	min := 100
-	for state, score := range results {
-		if score < min {
-			ss = state
-			min = score
-		}
-	}
-	return ss, nil
+	sort.Slice(results, func(i, j int) bool { return results[i].distance < results[j].distance })
+	return results[0].state, nil
 }
