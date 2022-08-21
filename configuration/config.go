@@ -30,6 +30,13 @@ const (
 	defaultHttpTimeout = 5 * time.Second
 )
 
+type RetryConfig struct {
+	InitialInterval time.Duration
+	Multiplier      float64
+	MaxInterval     time.Duration
+	MaxElapsedTime  time.Duration
+}
+
 var v *viper.Viper
 
 func InitConfiguration(cmd *cobra.Command, configFile string) error {
@@ -129,4 +136,15 @@ func GetPrivateKey() string {
 
 func GetServerAddress() string {
 	return v.GetString(server)
+}
+
+func GetRepoRetryConfig() RetryConfig {
+	config := RetryConfig{
+		// InitialInterval: parseDuration(repoRetryInitialInterval),
+		// Multiplier:      viper.GetFloat64(repoRetryMultiplier),
+		// MaxInterval:     parseDuration(repoRetryMaxInterval),
+		// MaxElapsedTime:  parseDuration(repoRetryMaxElapsedTime),
+	}
+
+	return config
 }

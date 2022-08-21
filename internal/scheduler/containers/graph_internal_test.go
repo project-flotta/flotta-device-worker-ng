@@ -12,7 +12,7 @@ import (
 *					   \
 *                       -> deployed2 -> running
  */
-func TestGraph(t *testing.T) {
+func testGraph(t *testing.T) {
 	e := NewWithT(t)
 	g := NewGraph[int, string]()
 
@@ -43,7 +43,7 @@ func TestGraph(t *testing.T) {
 *					   \              /
 *                       -- deployed2 /
  */
-func TestGraph2(t *testing.T) {
+func testGraph2(t *testing.T) {
 	e := NewWithT(t)
 	g := NewGraph[int, string]()
 	ready := g.CreateNode("ready")
@@ -70,7 +70,7 @@ func TestGraph2(t *testing.T) {
 	fmt.Printf("%+v\n", path)
 }
 
-func TestGraph3(t *testing.T) {
+func testGraph3(t *testing.T) {
 	e := NewWithT(t)
 	g := NewGraph[int, string]()
 	ready := g.CreateNode("ready")
@@ -101,7 +101,6 @@ func TestPodmanTask(t *testing.T) {
 	// errored -- markBasedType --> ready
 	erroredNode := g.CreateNode("error")
 	g.AddEdge(deployingNode, erroredNode, 2)
-	g.AddEdge(erroredNode, ready, 1)
 
 	// deployed -- markBasedType --> running
 	runningNode := g.CreateNode("running")
@@ -119,7 +118,6 @@ func TestPodmanTask(t *testing.T) {
 	exitNode := g.CreateNode("exited")
 	g.AddEdge(deployedNode, exitNode, 2)
 	g.AddEdge(runningNode, exitNode, 2)
-	g.AddEdge(exitNode, ready, 1)
 
 	// running -- markBasedType --> stoppingNode
 	// degradedNode -- markBasedType --> stoppingNode
@@ -131,7 +129,7 @@ func TestPodmanTask(t *testing.T) {
 	// stoppedNode -- markBasedType --> ready
 	stoppedNode := g.CreateNode("stopped")
 	g.AddEdge(stoppingNode, stoppedNode, 2)
-	g.AddEdge(stoppedNode, ready, 1)
+	g.AddEdge(ready, stoppedNode, 1)
 
 	// stoppedNode -- markBasedType --> inactiveNode
 	// exitNode -- markBasedType --> inactiveNode
@@ -139,7 +137,7 @@ func TestPodmanTask(t *testing.T) {
 	inactiveNode := g.CreateNode("inactive")
 	g.AddEdge(stoppedNode, inactiveNode, 1)
 	g.AddEdge(exitNode, inactiveNode, 1)
-	g.AddEdge(inactiveNode, ready, 1)
+	g.AddEdge(ready, inactiveNode, 1)
 
 	// exitNode -- markBasedType --> delete
 	// stopped -- markBasedType --> delete
@@ -151,7 +149,7 @@ func TestPodmanTask(t *testing.T) {
 	g.AddEdge(inactiveNode, deleteNode, 1)
 	g.AddEdge(ready, deleteNode, 1)
 
-	path, err := g.FindPath("ready", "deletion")
+	path, err := g.FindPath("running", "deletion")
 	e.Expect(err).To(BeNil())
 	for _, p := range path {
 		fmt.Printf("%+v\n", p)

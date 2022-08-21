@@ -3,6 +3,7 @@ package containers
 import (
 	"errors"
 	"fmt"
+	"sync"
 )
 
 var (
@@ -30,8 +31,13 @@ func (e Edge[S, T]) String() string {
 	return fmt.Sprintf("%v --[%v]--> %v", e.From.Value, e.Value, e.To.Value)
 }
 
+/*
+This is a weak implementation of a directed graph. It *does not* detect backedges so
+you must be very careful when you define your state graph to not add backedges
+*/
 type Graph[S, T comparable] struct {
 	Nodes []*Node[S, T]
+	lock  sync.Mutex
 }
 
 // New returns a new Graph with the specified root node.
@@ -70,8 +76,7 @@ func (g *Graph[S, T]) AddEdge(from *Node[S, T], to *Node[S, T], value S) {
 	from.Out = append(from.Out, e)
 }
 
-func (g *Graph[S, T]) FindPath(from T, to T) ([][]*Node[S, T], error) {
-
+func (g *Graph[S, T]) FindPath(from T, to T) ([][]map[T]S, error) {
 	start := g.GetNode(from)
 	if start == nil {
 		return nil, fmt.Errorf("%w start node value: %v", ErrNodeNotFound, from)
@@ -82,16 +87,54 @@ func (g *Graph[S, T]) FindPath(from T, to T) ([][]*Node[S, T], error) {
 		return nil, fmt.Errorf("%w end node value: %v", ErrNodeNotFound, to)
 	}
 
-	found := [][]*Node[S, T]{}
+	if start.Value == end.Value {
+		return nil, nil
+	}
 
+	g.lock.Lock()
+	defer g.lock.Unlock()
+
+	g.reset()
+	found := [][]*Node[S, T]{}
 	g.findPath(start, start, end, nil, nil, &found)
 
-	return found, nil
+	ret := [][]map[T]S{}
+	for _, f := range found {
+		path := make([]map[T]S, 0)
+		i := 0
+		for {
+			start := f[i]
+			if i+1 >= len(f) {
+				var none S
+				path = append(path, map[T]S{start.Value: none})
+				break
+			}
+			end := f[i+1]
+			for _, edge := range start.Out {
+				if edge.To == end {
+					path = append(path, map[T]S{start.Value: edge.Value})
+					break
+				}
+			}
+			i++
+		}
+		ret = append(ret, path)
+	}
+
+	return ret, nil
+}
+
+func (g *Graph[S, T]) reset() {
+	// from the starting point
+	for _, n := range g.Nodes {
+		n.though = nil
+	}
 }
 
 func (g *Graph[S, T]) findPath(point, start, end *Node[S, T], path map[*Node[S, T]][]*Node[S, T], visit map[*Node[S, T]]bool, found *[][]*Node[S, T]) {
 	if visit == nil {
 		visit = make(map[*Node[S, T]]bool)
+		g.reset()
 	}
 	if visit[start] {
 		return
@@ -102,7 +145,7 @@ func (g *Graph[S, T]) findPath(point, start, end *Node[S, T], path map[*Node[S, 
 	}
 
 	if start == end {
-		// we found the path. start walking backwards though the node.though
+		// we found the path. start walking backwards to the beginning
 		p := []*Node[S, T]{end}
 		n := end.though
 		for n != nil {
@@ -137,6 +180,5 @@ func (g *Graph[S, T]) findPath(point, start, end *Node[S, T], path map[*Node[S, 
 			g.findPath(point, edge.To, end, path, visit, found)
 		}
 	}
-
 	visit[start] = false
 }
