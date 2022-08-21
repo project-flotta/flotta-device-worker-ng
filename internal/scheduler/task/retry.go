@@ -26,6 +26,10 @@ func NewTaskWithRetry(t Task, maxFailures int) Task {
 }
 
 func (r *retry) SetNextState(state State) error {
+	// temporary hack until the graph is ok
+	if r.t.CurrentState().OneOf(InactiveState, DeletionState) {
+		return fmt.Errorf("cannot mutate from inactive or deletion state")
+	}
 	if state.OneOf(ReadyState, DeployingState) && r.failures > r.maxFailures {
 		return fmt.Errorf("%w task_name '%s'", ErrTooManyFailures, r.t.Name())
 	}
