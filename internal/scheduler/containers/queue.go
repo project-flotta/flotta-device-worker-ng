@@ -25,6 +25,14 @@ func (s *Queue[T]) Push(p T) {
 	s.pushEnd(s.root, p)
 }
 
+func (s *Queue[T]) Peek() T {
+	var none T
+	if s.root == nil {
+		return none
+	}
+	return s.root.value
+}
+
 func (s *Queue[T]) Pop() T {
 	var none T
 	if s.root == nil {

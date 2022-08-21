@@ -13,6 +13,10 @@ func (e element) ID() string {
 	return fmt.Sprintf("%d", e)
 }
 
+func (e element) Name() string {
+	return fmt.Sprintf("%d", e)
+}
+
 func TestStore(t *testing.T) {
 	g := NewWithT(t)
 	store := NewStore[element]()
@@ -23,7 +27,7 @@ func TestStore(t *testing.T) {
 
 	g.Expect(store.Len()).To(Equal(3))
 
-	iter := store.Iter()
+	iter := store.Iterator()
 	for i := 1; i < 4; i++ {
 		v, ok := iter.Next()
 		g.Expect(ok).To(BeTrue())
@@ -34,14 +38,14 @@ func TestStore(t *testing.T) {
 	g.Expect(ko).To(BeFalse())
 
 	// find 2
-	_, ok := store.Find("2")
+	_, ok := store.FindByName("2")
 	g.Expect(ok).To(BeTrue())
 
 	// delete 2
 	store.Delete(element(2))
 	g.Expect(store.Len()).To(Equal(2))
 
-	iter = store.Iter()
+	iter = store.Iterator()
 	v, ok := iter.Next()
 	g.Expect(ok).To(BeTrue())
 	g.Expect(v).To(Equal(element(1)))
@@ -53,7 +57,7 @@ func TestStore(t *testing.T) {
 	// delete 1
 	store.Delete(element(1))
 	g.Expect(store.Len()).To(Equal(1))
-	iter = store.Iter()
+	iter = store.Iterator()
 	v, ok = iter.Next()
 	g.Expect(ok).To(BeTrue())
 	g.Expect(v).To(Equal(element(3)))
