@@ -6,6 +6,7 @@ import (
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"github.com/tupyy/device-worker-ng/internal/scheduler"
+	"github.com/tupyy/device-worker-ng/internal/scheduler/task"
 	"go.uber.org/zap"
 )
 
@@ -26,7 +27,7 @@ type Podman interface {
 
 type Executor struct {
 	podman  Podman
-	futures map[string]chan scheduler.TaskState
+	futures map[string]chan task.State
 	ids     map[string]string
 }
 
@@ -37,29 +38,29 @@ func New() (*Executor, error) {
 	}
 	return &Executor{
 		podman:  podman,
-		futures: make(map[string]chan scheduler.TaskState),
+		futures: make(map[string]chan task.State),
 		ids:     make(map[string]string),
 	}, nil
 }
 
-func (e *Executor) Run(ctx context.Context, w entity.Workload) *scheduler.Future[scheduler.TaskState] {
+func (e *Executor) Run(ctx context.Context, w entity.Workload) *scheduler.Future[task.State] {
 	workload := w.(entity.PodWorkload)
 
-	ch := make(chan scheduler.TaskState)
+	ch := make(chan task.State)
 	future := scheduler.NewFuture(ch)
 	e.futures[w.ID()] = ch
 
 	pod, err := toPod(workload)
 	if err != nil {
 		zap.S().Errorw("failed to create pod", "error", err)
-		e.sendState(w.ID(), scheduler.TaskStateExited, true)
+		e.sendState(w.ID(), task.ExitedState, true)
 		return future
 	}
 
 	yaml, err := toPodYaml(pod, workload.Configmaps)
 	if err != nil {
 		zap.S().Errorw("failed to create pod", "error", err)
-		e.sendState(w.ID(), scheduler.TaskStateExited, true)
+		e.sendState(w.ID(), task.ExitedState, true)
 		return future
 	}
 
@@ -73,20 +74,20 @@ func (e *Executor) Run(ctx context.Context, w entity.Workload) *scheduler.Future
 	report, err := e.podman.Run(tmp.Name(), workload.ImageRegistryAuth, workload.Annotations)
 	if err != nil {
 		zap.S().Errorw("failed to execute workload", "error", err, "report", report)
-		e.sendState(w.ID(), scheduler.TaskStateExited, true)
+		e.sendState(w.ID(), task.ExitedState, true)
 		return future
 	}
 
 	zap.S().Infow("workload started", "hash", w.Hash(), "report", report)
-	ch <- scheduler.TaskStateDeployed
+	ch <- task.DeployedState
 
 	err = e.podman.Start(report[0].Id)
 	if err != nil {
-		e.sendState(w.ID(), scheduler.TaskStateExited, true)
+		e.sendState(w.ID(), task.ExitedState, true)
 		return future
 	}
 
-	e.sendState(w.ID(), scheduler.TaskStateRunning, false)
+	e.sendState(w.ID(), task.RunningState, false)
 	e.ids[w.ID()] = report[0].Id
 
 	return future
@@ -106,12 +107,12 @@ func (e *Executor) Stop(ctx context.Context, w entity.Workload) {
 		return
 	}
 
-	e.sendState(w.ID(), scheduler.TaskStateExited, false)
+	e.sendState(w.ID(), task.ExitedState, false)
 
 	zap.S().Infow("workload stopped", "workload_id", w.ID())
 }
 
-func (e *Executor) sendState(workloadID string, state scheduler.TaskState, removeFuture bool) {
+func (e *Executor) sendState(workloadID string, state task.State, removeFuture bool) {
 	ch, found := e.futures[workloadID]
 	if !found {
 		return
