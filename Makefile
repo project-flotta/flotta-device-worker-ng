@@ -53,12 +53,10 @@ ifeq (, $(shell which ginkgo 2> /dev/null))
 	$(call go-install-tool,$(GOVER),github.com/sozorogami/gover)
 endif
 
-GINKGO = $(shell pwd)/bin/ginkgo
+GINKGO=$(shell which ginkgo)
 ginkgo:
 ifeq (, $(shell which ginkgo 2> /dev/null))
 	$(call go-install-tool,$(GINKGO),github.com/onsi/ginkgo/v2/ginkgo@v2.1.3)
-else
-	GINKGO=$(shell which ginkgo)
 endif
 
 test.tools: ## Install test-tools
@@ -69,7 +67,7 @@ gosec: ## Run gosec locally
 
 test: ## Run unit test on device worker
 test: test.tools
-	$(GINKGO) --race -r $(GINKGO_OPTIONS) ./internal/* ./cmd/*
+	$(GINKGO) -r $(GINKGO_OPTIONS) ./internal/* ./cmd/*
 
 TEST_IMAGE_NAME ?= device-worker-test
 TEST_IMAGE_TAG ?= latest
