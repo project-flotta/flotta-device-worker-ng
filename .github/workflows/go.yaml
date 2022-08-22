@@ -17,9 +17,16 @@ jobs:
       uses: actions/setup-go@v3
       with:
         go-version: 1.18
+    
+    - name: Install package
+      run: |
+        sudo apt-get -y update
+        sudo apt-get -y install libbtrfs-dev libgpgme-dev libdevmapper-dev ansible
+        sudo mkdir -p /usr/local/etc
+        sudo chmod 777 /usr/local/etc
 
     - name: Build
-      run: go build -v ./...
+      run: make build
 
     - name: Test
       run: make test
