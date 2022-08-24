@@ -20,34 +20,33 @@ func (r Result[T]) IsPending() bool {
 }
 
 type Future[T any] struct {
-	input    chan T
-	done     bool
-	hasValue bool
-	values   containers.Queue[T]
+	input       chan T
+	inputClosed bool
+	values      containers.Queue[T]
 }
 
 func (f *Future[T]) Resolved() bool {
-	return f.done
+	return f.inputClosed && f.values.Size() == 0
 }
 
 func NewFuture[T any](input chan T) *Future[T] {
 	f := &Future[T]{
-		input: input,
-		done:  false,
+		input:       input,
+		inputClosed: false,
 	}
 
 	go func() {
 		for value := range f.input {
 			f.values.Push(value)
 		}
-		f.done = true
+		f.inputClosed = true
 	}()
 
 	return f
 }
 
 func (f *Future[T]) Poll() (Result[T], error) {
-	if f.done && f.values.Size() == 0 {
+	if f.Resolved() {
 		return Result[T]{}, fmt.Errorf("future already resolved")
 	}
 

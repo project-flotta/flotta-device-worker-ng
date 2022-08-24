@@ -134,7 +134,6 @@ func (g *Graph[S, T]) reset() {
 func (g *Graph[S, T]) findPath(point, start, end *Node[S, T], path map[*Node[S, T]][]*Node[S, T], visit map[*Node[S, T]]bool, found *[][]*Node[S, T]) {
 	if visit == nil {
 		visit = make(map[*Node[S, T]]bool)
-		g.reset()
 	}
 	if visit[start] {
 		return

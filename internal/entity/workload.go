@@ -52,7 +52,7 @@ type PodWorkload struct {
 }
 
 func (p PodWorkload) ID() string {
-	return p.Name
+	return p.Hash()
 }
 
 func (p PodWorkload) Kind() WorkloadKind {

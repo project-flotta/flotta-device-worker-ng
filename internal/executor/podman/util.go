@@ -1,12 +1,13 @@
-package executor
+package podman
 
 import (
 	"fmt"
+	"strings"
+
 	config "github.com/tupyy/device-worker-ng/configuration"
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
-	"strings"
 )
 
 func toPod(workload entity.PodWorkload) (*v1.Pod, error) {
@@ -19,7 +20,7 @@ func toPod(workload entity.PodWorkload) (*v1.Pod, error) {
 		Spec: podSpec,
 	}
 	pod.Kind = "Pod"
-	pod.Name = fmt.Sprintf("%s-%s", workload.Name, workload.Hash()[:8])
+	pod.Name = fmt.Sprintf("%s", workload.ID())
 	pod.Annotations = workload.Annotations
 	pod.Labels = workload.Labels
 	var containers []v1.Container

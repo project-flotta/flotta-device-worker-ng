@@ -96,16 +96,20 @@ func createPodmanGraph() *containers.Graph[EdgeType, State] {
 
 	// deployed -- eventBasedType --> degraded
 	// running -- eventBasedType --> running
+	// deployed -- eventBasedType --> running
 	degradedNode := g.CreateNode(DegradedState)
 	g.AddEdge(deployedNode, degradedNode, EventBasedEdgeType)
 	g.AddEdge(runningNode, degradedNode, EventBasedEdgeType)
+	g.AddEdge(degradedNode, runningNode, EventBasedEdgeType)
 
 	// deployed -- eventBasedType --> exited
 	// running -- eventBasedType --> exited
+	// exited -- eventBasedType --> running
 	// exited -- markBasedType --> ready
 	exitNode := g.CreateNode(ExitedState)
 	g.AddEdge(deployedNode, exitNode, EventBasedEdgeType)
 	g.AddEdge(runningNode, exitNode, EventBasedEdgeType)
+	g.AddEdge(exitNode, runningNode, EventBasedEdgeType)
 
 	// running -- markBasedType --> stoppingNode
 	// degradedNode -- markBasedType --> stoppingNode

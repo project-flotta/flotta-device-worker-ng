@@ -28,12 +28,13 @@ const (
 	stopMark      string = "stop"
 	deployMark    string = "deploy"
 	inactiveMark  string = "inactive"
+	errorMark     string = "error"
 	nextStateMark string = "next_state"
 )
 
 //go:generate mockgen -package=scheduler -destination=mock_executor.go --build_flags=--mod=mod . Executor
 type Executor interface {
-	Run(ctx context.Context, w entity.Workload) *Future[task.State]
+	Run(ctx context.Context, w entity.Workload) (*Future[task.State], error)
 	Stop(ctx context.Context, w entity.Workload)
 }
 
@@ -152,7 +153,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				if future, found := s.futures[t.ID()]; found {
 					result, _ := future.Poll()
 					if result.IsReady() {
-						zap.S().Debugw("poll future", "id", t.ID(), "result", result)
+						zap.S().Debugw("poll future", "id", t.ID(), "result", result.Value.String())
 						t.AddMark(nextStateMark, result.Value.String())
 					}
 
@@ -231,7 +232,14 @@ func (s *Scheduler) execute(ctx context.Context, doneCh chan struct{}) {
 			s.executor.Stop(context.Background(), t.Workload())
 		case runAction:
 			t.SetCurrentState(task.DeployingState)
-			future := s.executor.Run(context.Background(), t.Workload())
+			future, err := s.executor.Run(context.Background(), t.Workload())
+			if err != nil {
+				zap.S().Error(err)
+				// Set the current state to error. Because the next state is still deploying,
+				// the scheduler will try to deploy the job once more.
+				t.SetCurrentState(task.ErrorState)
+				break
+			}
 			s.futures[t.ID()] = future
 		case deleteAction:
 			delete(s.futures, t.ID())
@@ -274,8 +282,7 @@ func (s *Scheduler) mutate(t task.Task) (bool, error) {
 		edgeType  task.EdgeType
 	)
 
-	mark := t.Peek()
-	// task is marked. We try to mutate the task based on those marks.
+	mark := t.PopMark()
 	switch mark.Kind {
 	case stopMark:
 		nextState = task.StoppingState
@@ -287,25 +294,23 @@ func (s *Scheduler) mutate(t task.Task) (bool, error) {
 		nextState = task.InactiveState
 		edgeType = task.MarkBasedEdgeType
 	case deployMark:
-		// hack to get the task restarted until we have a graph that detect backedges
-		// TODO fix this when graph is fixed
-		t.PopMark()
-		t.SetCurrentState(task.ReadyState)
-		if err := t.SetNextState(task.DeployingState); err != nil {
-			return false, err
-		}
-		return true, nil
+		nextState = task.DeployingState
+		edgeType = task.MarkBasedEdgeType
 	case nextStateMark:
 		nextState = task.FromString(mark.Value)
 		edgeType = task.EventBasedEdgeType
+		zap.S().Debugw("nextstate", "nextstate", nextState.String())
 	}
+
+	if nextState == t.CurrentState() {
+		return false, nil
+	}
+
 	state, err := s.advanceToState(t, nextState, edgeType)
 	if err != nil {
 		return false, err
 	}
-	if state == nextState {
-		t.PopMark()
-	}
+	zap.S().Debugw("set next state", "task_id", t.ID(), "next_state", state.String())
 	if err := t.SetNextState(state); err != nil {
 		return false, err
 	}
@@ -351,5 +356,6 @@ func (s *Scheduler) advanceToState(t task.Task, state task.State, edgeType task.
 		})
 	}
 	sort.Slice(results, func(i, j int) bool { return results[i].distance < results[j].distance })
+	zap.S().Debugw("********", "results", results, "paths", paths)
 	return results[0].state, nil
 }

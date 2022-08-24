@@ -2,125 +2,89 @@ package executor
 
 import (
 	"context"
-	"os"
+	"errors"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
+	"github.com/tupyy/device-worker-ng/internal/executor/common"
+	"github.com/tupyy/device-worker-ng/internal/executor/observer"
+	"github.com/tupyy/device-worker-ng/internal/executor/podman"
 	"github.com/tupyy/device-worker-ng/internal/scheduler"
 	"github.com/tupyy/device-worker-ng/internal/scheduler/task"
 	"go.uber.org/zap"
 )
 
-type WorkloadInfo struct {
-	Id     string
-	Name   string
-	Status string
-}
-
-type Podman interface {
-	List() ([]WorkloadInfo, error)
-	Remove(workloadId string) error
-	Run(manifestPath, authFilePath string, annotations map[string]string) ([]*PodReport, error)
-	Start(workloadId string) error
-	Stop(workloadId string) error
-	Exists(workloadId string) (bool, error)
+// executor is defines the interface for all executors: podman, bash, ansible.
+type executor interface {
+	Remove(ctx context.Context, id string) error
+	Run(ctx context.Context, w entity.Workload) (string, error)
+	Start(ctx context.Context, id string) error
+	Stop(ctx context.Context, id string) error
+	List(ctx context.Context) ([]common.WorkloadInfo, error)
+	Exists(ctx context.Context, id string) (bool, error)
 }
 
 type Executor struct {
-	podman  Podman
-	futures map[string]chan task.State
-	ids     map[string]string
+	executors map[entity.WorkloadKind]executor
+	observer  *observer.Observer
+	ids       map[string]string
 }
 
 func New() (*Executor, error) {
-	podman, err := NewPodman(os.Getenv("XDG_RUNTIME_DIR"))
+	e := &Executor{
+		executors: make(map[entity.WorkloadKind]executor),
+		ids:       make(map[string]string),
+		observer:  observer.New(),
+	}
+	podman, err := podman.New(true)
 	if err != nil {
 		return nil, err
 	}
-	return &Executor{
-		podman:  podman,
-		futures: make(map[string]chan task.State),
-		ids:     make(map[string]string),
-	}, nil
+	e.executors[entity.PodKind] = podman
+	return e, nil
 }
 
-func (e *Executor) Run(ctx context.Context, w entity.Workload) *scheduler.Future[task.State] {
-	workload := w.(entity.PodWorkload)
+func (e *Executor) Run(ctx context.Context, w entity.Workload) (*scheduler.Future[task.State], error) {
+	if w.Kind() != entity.PodKind {
+		return nil, errors.New("only pod workloads are supported")
+	}
+	executor := e.executors[w.Kind()]
 
-	ch := make(chan task.State)
+	exists, err := executor.Exists(ctx, w.ID())
+	if err != nil {
+		return nil, err
+	}
+
+	if exists {
+		ch := e.observer.RegisterWorkload(w.ID(), executor)
+		future := scheduler.NewFuture(ch)
+		ch <- task.DeployedState
+		return future, nil
+	}
+
+	_, err = executor.Run(ctx, w)
+	if err != nil {
+		return nil, err
+	}
+	zap.S().Infow("workload started", "id", w.ID())
+
+	ch := e.observer.RegisterWorkload(w.ID(), executor)
 	future := scheduler.NewFuture(ch)
-	e.futures[w.ID()] = ch
-
-	pod, err := toPod(workload)
-	if err != nil {
-		zap.S().Errorw("failed to create pod", "error", err)
-		e.sendState(w.ID(), task.ExitedState, true)
-		return future
-	}
-
-	yaml, err := toPodYaml(pod, workload.Configmaps)
-	if err != nil {
-		zap.S().Errorw("failed to create pod", "error", err)
-		e.sendState(w.ID(), task.ExitedState, true)
-		return future
-	}
-
-	zap.S().Debugw("pod spec", "spec", string(yaml))
-
-	// save file
-	tmp, _ := os.CreateTemp("/home/cosmin/tmp", "flotta-")
-	tmp.Write(yaml)
-	tmp.Close()
-
-	report, err := e.podman.Run(tmp.Name(), workload.ImageRegistryAuth, workload.Annotations)
-	if err != nil {
-		zap.S().Errorw("failed to execute workload", "error", err, "report", report)
-		e.sendState(w.ID(), task.ExitedState, true)
-		return future
-	}
-
-	zap.S().Infow("workload started", "hash", w.Hash(), "report", report)
 	ch <- task.DeployedState
 
-	err = e.podman.Start(report[0].Id)
-	if err != nil {
-		e.sendState(w.ID(), task.ExitedState, true)
-		return future
-	}
-
-	e.sendState(w.ID(), task.RunningState, false)
-	e.ids[w.ID()] = report[0].Id
-
-	return future
+	return future, nil
 }
 
 func (e *Executor) Stop(ctx context.Context, w entity.Workload) {
-	podID := e.ids[w.ID()]
-	err := e.podman.Stop(podID)
-	if err != nil {
-		zap.S().Errorw("failed to stop pod", "error", err, "pod_id", podID, "workload_id", w.ID())
+	if w.Kind() != entity.PodKind {
+		zap.S().Errorw("workload type unsupported %s", w.Kind())
 		return
 	}
 
-	err = e.podman.Remove(podID)
-	if err != nil {
-		zap.S().Errorw("failed to remove pod", "error", err, "pod_id", podID, "workload_id", w.ID())
+	executor := e.executors[w.Kind()]
+	if err := executor.Stop(ctx, w.ID()); err != nil {
+		zap.S().Errorw("failed to stop workload", "error", err)
 		return
 	}
-
-	e.sendState(w.ID(), task.ExitedState, false)
 
 	zap.S().Infow("workload stopped", "workload_id", w.ID())
-}
-
-func (e *Executor) sendState(workloadID string, state task.State, removeFuture bool) {
-	ch, found := e.futures[workloadID]
-	if !found {
-		return
-	}
-
-	ch <- state
-	if removeFuture {
-		close(ch)
-		delete(e.futures, workloadID)
-	}
 }

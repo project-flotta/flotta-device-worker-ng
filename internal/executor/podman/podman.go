@@ -1,4 +1,4 @@
-package executor
+package podman
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/containers/podman/v4/pkg/bindings/containers"
 	"github.com/containers/podman/v4/pkg/bindings/play"
 	"github.com/containers/podman/v4/pkg/bindings/pods"
+	"github.com/tupyy/device-worker-ng/internal/executor/common"
 	"go.uber.org/zap"
 )
 
@@ -67,15 +68,15 @@ func NewPodman(xdgRuntimeDir string) (*podman, error) {
 	return p, nil
 }
 
-func (p *podman) List() ([]WorkloadInfo, error) {
+func (p *podman) List() ([]common.WorkloadInfo, error) {
 	podList, err := pods.List(p.podmanConnection, nil)
 	if err != nil {
 		return nil, err
 	}
-	var workloads []WorkloadInfo
+	var workloads []common.WorkloadInfo
 	for _, pod := range podList {
-		wi := WorkloadInfo{
-			Id:     pod.Id,
+		wi := common.WorkloadInfo{
+			Id:     pod.Name,
 			Name:   pod.Name,
 			Status: pod.Status,
 		}
