@@ -118,6 +118,7 @@ func TestPodmanTask(t *testing.T) {
 	exitNode := g.CreateNode("exited")
 	g.AddEdge(deployedNode, exitNode, 2)
 	g.AddEdge(runningNode, exitNode, 2)
+	g.AddEdge(degradedNode, exitNode, 2)
 
 	// running -- markBasedType --> stoppingNode
 	// degradedNode -- markBasedType --> stoppingNode
@@ -149,7 +150,8 @@ func TestPodmanTask(t *testing.T) {
 	g.AddEdge(inactiveNode, deleteNode, 1)
 	g.AddEdge(ready, deleteNode, 1)
 
-	path, err := g.FindPath("running", "deletion")
+	_, err := g.FindPath("ready", "exited")
+	path, err := g.FindPath("deployed", "exited")
 	e.Expect(err).To(BeNil())
 	for _, p := range path {
 		fmt.Printf("%+v\n", p)

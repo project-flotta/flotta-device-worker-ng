@@ -19,13 +19,13 @@ func NewMockExecutor() *MockExecutor {
 	}
 }
 
-func (e *MockExecutor) Run(ctx context.Context, w entity.Workload) *Future[task.State] {
+func (e *MockExecutor) Run(ctx context.Context, w entity.Workload) (*Future[task.State], error) {
 	e.RunCount++
 	ch := make(chan task.State)
 	e.futureCh[w.ID()] = ch
 	f := NewFuture(ch)
 	ch <- task.DeployedState
-	return f
+	return f, nil
 }
 
 func (e *MockExecutor) Stop(ctx context.Context, w entity.Workload) {

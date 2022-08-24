@@ -17,7 +17,7 @@ func TestAdvanceToState(t *testing.T) {
 	// s.advanceToState(myTask, task.RunningState, task.MarkBasedEdgeType)
 	// g.Expect(myTask.CurrentState()).To(Equal(task.DeployingState))
 
-	myTask.SetCurrentState(task.RunningState)
-	s.advanceToState(myTask, task.DeletionState, task.MarkBasedEdgeType)
+	myTask.SetCurrentState(task.DeployedState)
+	s.advanceToState(myTask, task.ExitedState, task.EventBasedEdgeType)
 	g.Expect(myTask.CurrentState()).To(Equal(task.RunningState))
 }
