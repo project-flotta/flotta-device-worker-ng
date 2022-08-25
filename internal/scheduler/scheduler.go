@@ -2,54 +2,43 @@ package scheduler
 
 import (
 	"context"
-	"errors"
-	"sort"
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"github.com/tupyy/device-worker-ng/internal/scheduler/containers"
-	"github.com/tupyy/device-worker-ng/internal/scheduler/task"
 	"go.uber.org/zap"
 )
-
-type actionType int
 
 const (
 	defaultHeartbeatPeriod = 1 * time.Second
 	gracefullShutdown      = 5 * time.Second
-
-	// action type
-	runAction actionType = iota
-	stopAction
-	deleteAction
-
-	// marks type
-	deletionMark  string = "deletion"
-	stopMark      string = "stop"
-	deployMark    string = "deploy"
-	inactiveMark  string = "inactive"
-	errorMark     string = "error"
-	nextStateMark string = "next_state"
 )
 
 //go:generate mockgen -package=scheduler -destination=mock_executor.go --build_flags=--mod=mod . Executor
 type Executor interface {
-	Run(ctx context.Context, w entity.Workload) (*Future[task.State], error)
-	Stop(ctx context.Context, w entity.Workload)
+	Remove(ctx context.Context, w entity.Workload) error
+	Run(ctx context.Context, w entity.Workload) error
+	Stop(ctx context.Context, w entity.Workload) error
+	GetState(ctx context.Context, w entity.Workload) (string, error)
+	Exists(ctx context.Context, w entity.Workload) (bool, error)
 }
+
+type syncResult struct {
+	State State
+	Err   error
+}
+
+type syncTaskFunc func(t Task, executor Executor) syncResult
 
 type Scheduler struct {
 	// tasks holds all the current tasks
-	tasks *containers.Store[task.Task]
-	// futures holds the futures of executed tasks
-	// the hash of the task is the key
-	futures map[string]*Future[task.State]
+	tasks *containers.Store[Task]
 	// executor
 	executor Executor
 	// runCancel is the cancel function of the run goroutine
 	runCancel context.CancelFunc
-	// executionQueue holds the tasks which must be executed by executor
-	executionQueue *containers.ExecutionQueue[actionType, task.Task]
+	// syncFuncs holds a map of sync function for each task
+	syncFuncs map[Task]syncTaskFunc
 }
 
 // New creates a new scheduler with the default heartbeat period of 2 seconds.
@@ -64,10 +53,9 @@ func NewWitHeartbeatPeriod(executor Executor, heartbeatPeriod time.Duration) *Sc
 
 func newExecutor(executor Executor, heartbeatPeriod time.Duration) *Scheduler {
 	return &Scheduler{
-		tasks:          containers.NewStore[task.Task](),
-		futures:        make(map[string]*Future[task.State]),
-		executionQueue: containers.NewExecutionQueue[actionType, task.Task](),
-		executor:       executor,
+		tasks:     containers.NewStore[Task](),
+		executor:  executor,
+		syncFuncs: make(map[Task]syncTaskFunc),
 	}
 }
 
@@ -106,10 +94,7 @@ func (s *Scheduler) Stop(ctx context.Context) {
 }
 
 func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.Workload], profileCh chan entity.Message) {
-	execution := make(chan struct{}, 1)
-	doneExecutionCh := make(chan struct{})
-	mutate := make(chan struct{}, 1)
-	mark := make(chan struct{}, 1)
+	sync := make(chan struct{}, 1)
 
 	heartbeat := time.NewTicker(defaultHeartbeatPeriod)
 
@@ -117,245 +102,139 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 		select {
 		case o := <-input:
 			if o.None {
-				s.removeTasks(s.tasks.ToList())
+				for _, t := range s.tasks.ToList() {
+					t.MarkForDeletion()
+				}
 				break
 			}
 			// add tasks
 			m := make(map[string]struct{}) // holds temporary the new tasks
 			for _, w := range o.Value {
-				m[w.Hash()] = struct{}{}
-				task := task.NewTaskWithRetry(task.NewDefaultTask(w.ID(), w), 3)
-				if oldTask, found := s.tasks.FindByName(task.Name()); found {
-					if task.Equal(oldTask) {
+				t := NewDefaultTask(w.ID(), w)
+				m[t.ID()] = struct{}{}
+				if oldTask, found := s.tasks.FindByName(t.Name()); found {
+					if t.Equal(oldTask) {
 						continue
 					}
 					// something changed in the workload. Stop the old one and start the new one
-					zap.S().Infow("workload changed", "id", oldTask.Name)
-					s.removeTask(oldTask)
+					zap.S().Infow("workload changed", "id", oldTask)
+					oldTask.MarkForDeletion()
 				}
-				s.tasks.Add(task)
+				s.syncFuncs[t] = s.createSyncFunc(t)
+				s.tasks.Add(t)
+				t.SetTargetState(RunningState)
 			}
 			// check if there are task removed
 			it := s.tasks.Iterator()
 			for it.HasNext() {
-				task, _ := it.Next()
-				if _, found := m[task.ID()]; !found {
+				t, _ := it.Next()
+				if _, found := m[t.ID()]; !found {
 					// task was removed from the manifest.
-					zap.S().Infow("remove workload", "id", task.ID())
-					s.removeTask(task)
+					zap.S().Infow("mark for removal", "id", t.ID())
+					t.MarkForDeletion()
 				}
 			}
-		case <-mark:
+		case <-sync:
+			for t, syncFunc := range s.syncFuncs {
+				syncFunc(t, s.executor)
+			}
+			// remove all task marked for deletion and which are in unknown state
 			it := s.tasks.Iterator()
 			for it.HasNext() {
 				t, _ := it.Next()
-				// poll his future if any
-				if future, found := s.futures[t.ID()]; found {
-					result, _ := future.Poll()
-					if result.IsReady() {
-						zap.S().Debugw("poll future", "id", t.ID(), "result", result.Value.String())
-						t.AddMark(nextStateMark, result.Value.String())
-					}
-
-					// future is resolved when task has either been stopped or exited.
-					if future.Resolved() {
-						zap.S().Debugw("future resolved", "id", t.ID())
-						delete(s.futures, t.ID())
-					}
-					continue
-				}
-				// no future yet meaning the task has not been deployed yet or it exited.
-				// first evaluate task. if true than deploy it.
-				if s.evaluate(t) {
-					t.AddMark(deployMark, deployMark)
+				if t.IsMarkedForDeletion() && t.CurrentState() == UnknownState {
+					zap.S().Infow("task removed", "task_id", t.ID())
+					s.tasks.Delete(t)
 				}
 			}
-			mutate <- struct{}{}
-		case <-mutate:
-			it := s.tasks.Iterator()
-			for it.HasNext() {
-				t, _ := it.Next()
-
-				if mutated, err := s.mutate(t); err == nil && !mutated {
-					continue
-				} else if err != nil {
-					zap.S().Errorw("failed to mutate task", "task_id", t.ID(), "error", err)
-					continue
-				}
-
-				// resolve the mutations
-				switch t.NextState() {
-				case task.StoppingState:
-					zap.S().Debugw("stop task", "id", t.Name())
-					s.executionQueue.Push(stopAction, t)
-				case task.DeployingState:
-					zap.S().Debugw("deploy task", "id", t.Name())
-					s.executionQueue.Push(runAction, t)
-				case task.DeletionState:
-					zap.S().Debugw("remove task", "id", t.Name())
-					s.executionQueue.Push(deleteAction, t)
-				default:
-					t.SetCurrentState(t.NextState())
-				}
-			}
-			if s.executionQueue.Size() > 0 {
-				execution <- struct{}{}
-			}
-		case <-execution:
-			// execute every task in the execution queue
-			go s.execute(context.Background(), doneExecutionCh)
-			// stop heartbeat while we are consuming the execution queue.
-			// Once is done, reset the timer.
-			heartbeat.Stop()
-		case <-doneExecutionCh:
-			heartbeat.Reset(defaultHeartbeatPeriod)
 		case <-heartbeat.C:
-			mark <- struct{}{}
+			sync <- struct{}{}
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (s *Scheduler) execute(ctx context.Context, doneCh chan struct{}) {
-	for s.executionQueue.Size() > 0 {
-		// stopping task has higher priority
-		s.executionQueue.Sort(stopAction)
-		action, t, err := s.executionQueue.Pop()
+func (s *Scheduler) createSyncFunc(t Task) syncTaskFunc {
+	return func(t Task, executor Executor) (result syncResult) {
+		zap.S().Debugw("start sync", "task_id", t.ID())
+		defer func() {
+			zap.S().Debugw("sync done", "task_id", t.ID(), "state", result.State.String(), "error", result.Err)
+		}()
+
+		status, err := executor.GetState(context.TODO(), t.Workload())
 		if err != nil {
-			zap.S().Errorw("failed to pop task from queue", "error", err)
-			break
-		}
-		switch action {
-		case stopAction:
-			t.SetCurrentState(task.StoppingState)
-			s.executor.Stop(context.Background(), t.Workload())
-		case runAction:
-			t.SetCurrentState(task.DeployingState)
-			future, err := s.executor.Run(context.Background(), t.Workload())
-			if err != nil {
-				zap.S().Error(err)
-				// Set the current state to error. Because the next state is still deploying,
-				// the scheduler will try to deploy the job once more.
-				t.SetCurrentState(task.ErrorState)
-				break
+			return syncResult{
+				State: UnknownState,
+				Err:   err,
 			}
-			s.futures[t.ID()] = future
-		case deleteAction:
-			delete(s.futures, t.ID())
-			s.tasks.Delete(t)
 		}
-		select {
-		case <-ctx.Done():
-			doneCh <- struct{}{}
+
+		state := mapToState(status)
+		if state == t.TargetState() {
+			return syncResult{
+				State: t.TargetState(),
+			}
+		}
+
+		zap.S().Infow("new state found", "task_id", t.ID(), "state", state.String())
+
+		runTask := func(ctx context.Context) syncResult {
+			zap.S().Infow("run task", "task_id", t.ID())
+			exists, err := executor.Exists(ctx, t.Workload())
+			if err != nil {
+				return syncResult{State: UnknownState, Err: err}
+			}
+			if exists {
+				if err := executor.Remove(ctx, t.Workload()); err != nil {
+					return syncResult{State: UnknownState, Err: err}
+				}
+			}
+			if err := executor.Run(ctx, t.Workload()); err != nil {
+				return syncResult{State: UnknownState, Err: err}
+			}
+			newState, err := executor.GetState(ctx, t.Workload())
+			if err != nil {
+				return syncResult{State: UnknownState, Err: err}
+			}
+			t.SetCurrentState(mapToState(newState))
+			return syncResult{State: t.CurrentState()}
+		}
+
+		if t.TargetState() == RunningState && state.OneOf(UnknownState, ExitedState, DegradedState) {
+			result = runTask(context.TODO())
 			return
-		default:
 		}
+
+		stopTask := func(ctx context.Context) syncResult {
+			zap.S().Infow("stop task", "task_id", t.ID())
+			if err := executor.Stop(ctx, t.Workload()); err != nil {
+				return syncResult{State: UnknownState, Err: err}
+			}
+			if err := executor.Remove(ctx, t.Workload()); err != nil {
+				return syncResult{State: UnknownState, Err: err}
+			}
+			newState, err := executor.GetState(ctx, t.Workload())
+			if err != nil {
+				return syncResult{State: UnknownState, Err: err}
+			}
+			t.SetCurrentState(mapToState(newState))
+			return syncResult{State: t.CurrentState()}
+		}
+
+		if t.IsMarkedForDeletion() && state == RunningState {
+			result = stopTask(context.TODO())
+			return
+		}
+
+		t.SetCurrentState(state)
+		result = syncResult{State: state}
+
+		return
 	}
-	doneCh <- struct{}{}
 }
 
 // evaluate evaluates task's profiles based on current device profile.
-func (s *Scheduler) evaluate(t task.Task) bool {
+func (s *Scheduler) evaluate(t Task) bool {
 	return true
-}
-
-func (s *Scheduler) removeTasks(tasks []task.Task) {
-	for _, t := range tasks {
-		s.removeTask(t)
-	}
-}
-
-func (s *Scheduler) removeTask(task task.Task) {
-	task.AddMark(stopMark, stopMark)
-	task.AddMark(deletionMark, deletionMark)
-}
-
-// mutate process one mark at the time.
-func (s *Scheduler) mutate(t task.Task) (bool, error) {
-	if !t.HasMarks() {
-		return false, nil
-	}
-
-	var (
-		nextState task.State
-		edgeType  task.EdgeType
-	)
-
-	mark := t.PopMark()
-	switch mark.Kind {
-	case stopMark:
-		nextState = task.StoppingState
-		edgeType = task.MarkBasedEdgeType
-	case deletionMark:
-		nextState = task.DeletionState
-		edgeType = task.MarkBasedEdgeType
-	case inactiveMark:
-		nextState = task.InactiveState
-		edgeType = task.MarkBasedEdgeType
-	case deployMark:
-		nextState = task.DeployingState
-		edgeType = task.MarkBasedEdgeType
-	case nextStateMark:
-		nextState = task.FromString(mark.Value)
-		edgeType = task.EventBasedEdgeType
-		zap.S().Debugw("nextstate", "nextstate", nextState.String())
-	}
-
-	if nextState == t.CurrentState() {
-		return false, nil
-	}
-
-	state, err := s.advanceToState(t, nextState, edgeType)
-	if err != nil {
-		return false, err
-	}
-	zap.S().Debugw("set next state", "task_id", t.ID(), "next_state", state.String())
-	if err := t.SetNextState(state); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-// advanceToState return the shortest path to 'state' walking only on edge whose type is 'edgeType'.
-// each edge has a weight of 1.
-func (s *Scheduler) advanceToState(t task.Task, state task.State, edgeType task.EdgeType) (task.State, error) {
-	paths, err := t.FindState(state)
-	if err != nil {
-		return task.UnknownState, err
-	}
-
-	if len(paths) == 0 {
-		return task.UnknownState, errors.New("no path found")
-	}
-
-	// loop though all the paths and see how far we can get walking *only* on the edge of type 'edgeType'
-	// we stop at the last state which has edge of type 'edgeType'
-	// the state with the lowest score is returned or error if we didn't find anything
-	type result struct {
-		state    task.State
-		distance int
-	}
-	results := []result{}
-	for _, path := range paths {
-		var (
-			pathScore int
-			state     task.State
-		)
-		// the first state is the starting point itself. We need to look at the next state and the current edge.
-		for i := 0; i < len(path)-1; i++ {
-			nextState := path[i+1].Node
-			if path[i].Edge == edgeType {
-				pathScore = i
-				state = nextState
-			}
-		}
-		results = append(results, result{
-			state:    state,
-			distance: pathScore,
-		})
-	}
-	sort.Slice(results, func(i, j int) bool { return results[i].distance < results[j].distance })
-	zap.S().Debugw("********", "results", results, "paths", paths)
-	return results[0].state, nil
 }
