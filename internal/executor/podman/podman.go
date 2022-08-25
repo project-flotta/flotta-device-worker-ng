@@ -156,7 +156,7 @@ func (p *podman) Stop(workloadId string) error {
 			return err
 		}
 	}
-	return nil
+	return p.Remove(workloadId)
 }
 
 func (p *podman) getContainerDetails(containerId string) (*ContainerReport, error) {

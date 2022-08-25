@@ -3,8 +3,8 @@ package common
 import "errors"
 
 var (
-	ErrorDeployingWorkload = errors.New("failed to deploy workload")
-	ErrorRunningWorkload   = errors.New("failed to execute workload")
-	ErrorStoppingWorkload  = errors.New("failed to stop workload")
-	ErrorRemoveWorkload    = errors.New("failed to remove workload")
+	ErrDeployingWorkload = errors.New("failed to deploy workload")
+	ErrRunningWorkload   = errors.New("failed to execute workload")
+	ErrStoppingWorkload  = errors.New("failed to stop workload")
+	ErrRemoveWorkload    = errors.New("failed to remove workload")
 )
