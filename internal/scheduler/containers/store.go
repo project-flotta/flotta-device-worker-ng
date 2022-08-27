@@ -10,34 +10,6 @@ type Element interface {
 	ID() string
 }
 
-// A naive implementation of the iterator.
-// it is *not* thread safe.
-// Calling Next from different goroutines, could lead to a wierd behaviour.
-type Iterator[T Element] struct {
-	lock sync.Mutex
-	idx  int
-	s    *Store[T]
-}
-
-func (i *Iterator[T]) Next() (T, bool) {
-	i.lock.Lock()
-	defer i.lock.Unlock()
-
-	var none T
-	if i.idx >= i.s.Len() {
-		return none, false
-	}
-
-	oldIdx := i.idx
-	i.idx++
-
-	return i.s.Get(oldIdx)
-}
-
-func (i *Iterator[T]) HasNext() bool {
-	return i.idx < i.s.Len()
-}
-
 // it is *not* thread safe
 type Store[T Element] struct {
 	lock  sync.Mutex
@@ -47,13 +19,6 @@ type Store[T Element] struct {
 func NewStore[T Element]() *Store[T] {
 	return &Store[T]{
 		tasks: make([]T, 0, 3),
-	}
-}
-
-func (s *Store[T]) Iterator() *Iterator[T] {
-	return &Iterator[T]{
-		idx: 0,
-		s:   s.clone(),
 	}
 }
 

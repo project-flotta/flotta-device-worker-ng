@@ -33,7 +33,7 @@ type DefaultTask struct {
 	name string
 	// currentState holds the current state of the task
 	currentState State
-	// nextState holds the desired next state of the task
+	// targetState holds the desired next state of the task
 	// nextState is mutated by the scheduler when it wants to run/stop the workload
 	targetState       State
 	markedForDeletion bool
@@ -97,7 +97,7 @@ func (t *DefaultTask) Equal(other Task) bool {
 }
 
 func (t *DefaultTask) ID() string {
-	return t.workload.Hash()[:8]
+	return t.workload.ID()
 }
 
 func (t *DefaultTask) Name() string {

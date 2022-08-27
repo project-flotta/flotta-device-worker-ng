@@ -108,43 +108,26 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				break
 			}
 			// add tasks
-			m := make(map[string]struct{}) // holds temporary the new tasks
-			for _, w := range o.Value {
+			taskToRemove := substract(s.tasks.ToList(), o.Value)
+			newWorkloads := substract(o.Value, s.tasks.ToList())
+			for _, w := range newWorkloads {
 				t := NewDefaultTask(w.ID(), w)
-				m[t.ID()] = struct{}{}
-				if oldTask, found := s.tasks.FindByName(t.Name()); found {
-					if t.Equal(oldTask) {
-						continue
-					}
-					// something changed in the workload. Stop the old one and start the new one
-					zap.S().Infow("workload changed", "id", oldTask)
-					oldTask.MarkForDeletion()
-				}
 				s.syncFuncs[t] = s.createSyncFunc(t)
-				s.tasks.Add(t)
 				t.SetTargetState(RunningState)
+				s.tasks.Add(t)
 			}
-			// check if there are task removed
-			it := s.tasks.Iterator()
-			for it.HasNext() {
-				t, _ := it.Next()
-				if _, found := m[t.ID()]; !found {
-					// task was removed from the manifest.
-					zap.S().Infow("mark for removal", "id", t.ID())
-					t.MarkForDeletion()
-				}
+			// remove task which are not found in the EdgeWorkload manifest
+			for _, t := range taskToRemove {
+				t.MarkForDeletion()
 			}
 		case <-sync:
 			for t, syncFunc := range s.syncFuncs {
 				syncFunc(t, s.executor)
 			}
 			// remove all task marked for deletion and which are in unknown state
-			it := s.tasks.Iterator()
-			for it.HasNext() {
-				t, _ := it.Next()
+			for _, t := range s.tasks.ToList() {
 				if t.IsMarkedForDeletion() && t.CurrentState() == UnknownState {
-					zap.S().Infow("task removed", "task_id", t.ID())
-					s.tasks.Delete(t)
+					s.removeTask(t)
 				}
 			}
 		case <-heartbeat.C:
@@ -155,12 +138,22 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 	}
 }
 
+func (s *Scheduler) removeTask(t Task) {
+	zap.S().Infow("task removed", "task_id", t.ID())
+	s.tasks.Delete(t)
+	delete(s.syncFuncs, t)
+}
+
 func (s *Scheduler) createSyncFunc(t Task) syncTaskFunc {
 	return func(t Task, executor Executor) (result syncResult) {
 		zap.S().Debugw("start sync", "task_id", t.ID())
 		defer func() {
 			zap.S().Debugw("sync done", "task_id", t.ID(), "state", result.State.String(), "error", result.Err)
 		}()
+
+		if t.IsMarkedForDeletion() {
+			t.SetTargetState(ExitedState)
+		}
 
 		status, err := executor.GetState(context.TODO(), t.Workload())
 		if err != nil {
@@ -201,11 +194,6 @@ func (s *Scheduler) createSyncFunc(t Task) syncTaskFunc {
 			return syncResult{State: t.CurrentState()}
 		}
 
-		if t.TargetState() == RunningState && state.OneOf(UnknownState, ExitedState, DegradedState) {
-			result = runTask(context.TODO())
-			return
-		}
-
 		stopTask := func(ctx context.Context) syncResult {
 			zap.S().Infow("stop task", "task_id", t.ID())
 			if err := executor.Stop(ctx, t.Workload()); err != nil {
@@ -222,7 +210,12 @@ func (s *Scheduler) createSyncFunc(t Task) syncTaskFunc {
 			return syncResult{State: t.CurrentState()}
 		}
 
-		if t.IsMarkedForDeletion() && state == RunningState {
+		if t.TargetState() == RunningState && state.OneOf(UnknownState, ExitedState, DegradedState) {
+			result = runTask(context.TODO())
+			return
+		}
+
+		if t.TargetState().OneOf(ExitedState, InactiveState) {
 			result = stopTask(context.TODO())
 			return
 		}
