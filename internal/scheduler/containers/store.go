@@ -74,7 +74,7 @@ func (s *Store[T]) ToList() []T {
 	return s.tasks[:]
 }
 
-func (s *Store[T]) clone() *Store[T] {
+func (s *Store[T]) Clone() *Store[T] {
 	return &Store[T]{
 		tasks: s.tasks[:],
 	}
