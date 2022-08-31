@@ -107,6 +107,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			if opt.None {
 				for _, t := range s.tasks.ToList() {
 					t.MarkForDeletion()
+					t.SetTargetState(ExitedState)
 				}
 				break
 			}
@@ -121,6 +122,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			// remove task which are not found in the EdgeWorkload manifest
 			for _, t := range taskToRemove {
 				t.MarkForDeletion()
+				t.SetTargetState(ExitedState)
 			}
 		case <-sync:
 			// reconcile the tasks

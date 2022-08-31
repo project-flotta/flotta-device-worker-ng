@@ -23,12 +23,12 @@ func newReconciler() *reconciler {
 
 func (r *reconciler) Reconcile(ctx context.Context, tasks []Task, ex Executor) {
 	for _, t := range tasks {
-		switch t.Workload().Kind() {
-		case entity.PodKind:
-			r.syncFuncs[entity.PodKind](ctx, t, ex)
-		default:
+		fn, ok := r.syncFuncs[t.Workload().Kind()]
+		if !ok {
 			zap.S().Error("task kind not supported")
+			continue
 		}
+		fn(ctx, t, ex)
 	}
 }
 
@@ -38,10 +38,6 @@ func createPodmanSyncFunc() syncTaskFunc {
 		defer func() {
 			zap.S().Debugw("sync done", "task_id", t.ID(), "current_state", currentState.String(), "error", err)
 		}()
-
-		if t.IsMarkedForDeletion() {
-			t.SetTargetState(ExitedState)
-		}
 
 		status, err := executor.GetState(context.TODO(), t.Workload())
 		if err != nil {
