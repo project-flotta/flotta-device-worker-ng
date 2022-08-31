@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
-	"github.com/tupyy/device-worker-ng/internal/scheduler/containers"
 	"go.uber.org/zap"
 )
 
@@ -33,7 +32,7 @@ type Evaluator interface {
 
 type Scheduler struct {
 	// tasks holds all the current tasks
-	tasks *containers.Store[Task]
+	tasks *Store[Task]
 	// executor
 	executor Executor
 	// runCancel is the cancel function of the run goroutine
@@ -56,7 +55,7 @@ func NewWitHeartbeatPeriod(executor Executor, heartbeatPeriod time.Duration) *Sc
 
 func newExecutor(executor Executor, heartbeatPeriod time.Duration) *Scheduler {
 	return &Scheduler{
-		tasks:      containers.NewStore[Task](),
+		tasks:      NewStore[Task](),
 		executor:   executor,
 		reconciler: newReconciler(),
 	}

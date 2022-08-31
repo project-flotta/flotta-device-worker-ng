@@ -54,7 +54,7 @@ func newTask(name string, w entity.Workload) *DefaultTask {
 }
 
 func (t *DefaultTask) SetTargetState(state State) error {
-	zap.S().Debugw("new target state", "task_id", t.ID(), "target_state", state)
+	zap.S().Debugw("set target state", "task_id", t.ID(), "target_state", state)
 	t.targetState = state
 	return nil
 }
