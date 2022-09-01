@@ -92,6 +92,14 @@ func TestInterpreter(t *testing.T) {
 		},
 		{
 			test:     "x >= 1 && y == 2",
+			expected: false,
+			variables: map[string]interface{}{
+				"x": 0,
+			},
+			hasError: false,
+		},
+		{
+			test:     "x >= 1 && y == 2",
 			expected: true,
 			variables: map[string]interface{}{
 				"x": 3,

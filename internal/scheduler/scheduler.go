@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
+	"github.com/tupyy/device-worker-ng/internal/state"
 	"go.uber.org/zap"
 )
 
@@ -61,7 +62,7 @@ func newExecutor(executor Executor, heartbeatPeriod time.Duration) *Scheduler {
 	}
 }
 
-func (s *Scheduler) Start(ctx context.Context, input chan entity.Message, profileUpdateCh chan entity.Message) {
+func (s *Scheduler) Start(ctx context.Context, input chan entity.Message, profileUpdateCh chan []state.ProfileEvaluationResult) {
 	runCtx, cancel := context.WithCancel(ctx)
 	s.runCancel = cancel
 
@@ -95,7 +96,7 @@ func (s *Scheduler) Stop(ctx context.Context) {
 	zap.S().Info("scheduler shutdown")
 }
 
-func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.Workload], profileCh chan entity.Message) {
+func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.Workload], profileCh chan []state.ProfileEvaluationResult) {
 	sync := make(chan struct{}, 1)
 
 	heartbeat := time.NewTicker(defaultHeartbeatPeriod)

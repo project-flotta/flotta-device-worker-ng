@@ -12,7 +12,16 @@ type MetricServer interface {
 	Shutdown(ctx context.Context) error
 }
 
-type EvaluationResult entity.Result[map[string]bool]
+type ConditionResult struct {
+	Name  string
+	Value bool
+	Error error
+}
+
+type ProfileEvaluationResult struct {
+	Name              string
+	ConditionsResults []ConditionResult
+}
 
 type Evaluator interface {
 	SetProfiles(profiles map[string]entity.DeviceProfile)
@@ -20,12 +29,12 @@ type Evaluator interface {
 	// Evaluate returns list of results for each profile.
 	// The result is a map having as key the name of the profile and the result as value.
 	// If the profile expression evaluates with error, the error in Result is set accordantly.
-	Evaluate() entity.Option[[]EvaluationResult]
+	Evaluate() entity.Option[[]ProfileEvaluationResult]
 }
 
 type Manager struct {
 	// profile condition updates are written to this channel
-	OutputCh chan entity.Message
+	OutputCh chan []ProfileEvaluationResult
 
 	// profileEvaluator try to determine if a profile changed state
 	// after each new metricValue
@@ -51,7 +60,7 @@ func _new(recv chan entity.Message, evaluator Evaluator) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	m := &Manager{
-		OutputCh:          make(chan entity.Message),
+		OutputCh:          make(chan []ProfileEvaluationResult),
 		recv:              recv,
 		cancelFunc:        cancel,
 		profilesEvaluator: evaluator,
@@ -107,10 +116,7 @@ func (m *Manager) run(ctx context.Context) {
 			if opt.None {
 				break
 			}
-			m.OutputCh <- entity.Message{
-				Kind:    entity.ProfileConfigurationMessage,
-				Payload: opt.Value,
-			}
+			m.OutputCh <- opt.Value
 		case <-ctx.Done():
 			return
 		}
