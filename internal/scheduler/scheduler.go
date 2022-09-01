@@ -133,6 +133,8 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					s.tasks.Delete(t)
 				}
 			}
+		case profiles := <-profileCh:
+			zap.S().Debug(profiles)
 		case <-heartbeat.C:
 			sync <- struct{}{}
 		case <-ctx.Done():

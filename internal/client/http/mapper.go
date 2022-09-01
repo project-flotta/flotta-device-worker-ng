@@ -30,7 +30,6 @@ func registerInfoEntity2Model(e entity.RegistrationInfo) models.RegistrationInfo
 }
 
 func hardwareEntity2Model(e entity.HardwareInfo) models.HardwareInfo {
-
 	m := models.HardwareInfo{
 		Boot: &models.Boot{
 			CurrentBootMode: e.Boot.CurrentBootMode,
@@ -197,6 +196,14 @@ func configurationModel2Entity(m models.DeviceConfigurationMessage) entity.Devic
 			},
 			Period: time.Duration(int(m.Configuration.Heartbeat.PeriodSeconds) * int(time.Second)),
 		},
+		Profiles: map[string]map[string]string{},
+	}
+
+	for _, p := range m.Configuration.Profiles {
+		e.Profiles[p.Name] = make(map[string]string)
+		for _, condition := range p.Conditions {
+			e.Profiles[p.Name][condition.Name] = condition.Expression
+		}
 	}
 
 	workloads := make([]entity.Workload, 0, len(m.Workloads))

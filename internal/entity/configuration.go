@@ -84,6 +84,7 @@ func (d DeviceConfiguration) Hash() string {
 	for _, m := range d.Mounts {
 		fmt.Fprintf(&sb, "%s%s%s%s", m.Device, m.Directory, m.Options, m.Type)
 	}
+	fmt.Fprintf(&sb, "%+v", d.Profiles)
 	sum := sha256.Sum256(bytes.NewBufferString(sb.String()).Bytes())
 	return fmt.Sprintf("%x", sum)
 }

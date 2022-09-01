@@ -162,7 +162,7 @@ func TestInterpreter(t *testing.T) {
 
 	for idx, data := range exprs {
 		t.Run(fmt.Sprintf("test%d: %s", idx+1, data.test), func(t *testing.T) {
-			intr, err := NewInterpreter(data.test)
+			intr, err := New(data.test)
 			assert.Nil(t, err)
 
 			if err != nil {

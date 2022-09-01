@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sync/atomic"
+
+	"go.uber.org/zap"
 )
 
 type metricValue struct {
@@ -75,6 +77,7 @@ func (m *metricServer) handler() func(w http.ResponseWriter, r *http.Request) {
 
 		var data metricValue
 		if err := json.Unmarshal(d, &data); err != nil {
+			zap.S().Errorw("failed to marshal received data", "error", err, "data", string(d))
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}

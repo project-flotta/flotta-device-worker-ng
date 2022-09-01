@@ -49,7 +49,7 @@ func New(client Client, confManager *configuration.Manager, certManager *certifi
 	return c
 }
 
-func (c *Controller) Shutdown() {
+func (c *Controller) Shutdown(ctx context.Context) {
 	d := make(chan struct{}, 1)
 	c.done <- d
 	<-d

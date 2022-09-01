@@ -27,7 +27,7 @@ type Interpreter struct {
 	expr Expr
 }
 
-func NewInterpreter(expression string) (*Interpreter, error) {
+func New(expression string) (*Interpreter, error) {
 	expr, err := parse(bytes.NewBufferString(expression).Bytes())
 	if err != nil {
 		return nil, err

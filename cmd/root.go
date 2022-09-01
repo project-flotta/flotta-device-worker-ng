@@ -75,8 +75,8 @@ var rootCmd = &cobra.Command{
 		<-done
 
 		cancel()
-		controller.Shutdown()
-		stateManager.Shutdown()
+		controller.Shutdown(ctx)
+		stateManager.Shutdown(ctx)
 
 	},
 }

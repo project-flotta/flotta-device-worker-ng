@@ -25,7 +25,6 @@ func (pe *profileEvaluator) evaluate() []EvaluationResult {
 			Error: err,
 		})
 	}
-
 	return results
 }
 
@@ -34,14 +33,14 @@ type simpleEvaluator struct {
 }
 
 func (p *simpleEvaluator) SetProfiles(profiles map[string]entity.DeviceProfile) {
-	evaluators := make([]*profileEvaluator, 0, len(profiles))
+	p.evaluators = make([]*profileEvaluator, 0, len(profiles))
 	for k, v := range profiles {
 		e := profileEvaluator{
 			Name:      k,
 			Profile:   v,
 			Variables: make(map[string]interface{}),
 		}
-		evaluators = append(evaluators, &e)
+		p.evaluators = append(p.evaluators, &e)
 	}
 }
 

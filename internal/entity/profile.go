@@ -26,5 +26,5 @@ type ProfileCondition struct {
 	// requiredVariables holds the name of variables required to evaluate the expression
 	RequiredVariables []string
 	// Expression is the expression's interpreter for the condition
-	Expression interpreter.Interpreter
+	Expression *interpreter.Interpreter
 }

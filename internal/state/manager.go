@@ -2,7 +2,6 @@ package state
 
 import (
 	"context"
-	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"go.uber.org/zap"
@@ -66,8 +65,7 @@ func _new(recv chan entity.Message, evaluator Evaluator) *Manager {
 func (m *Manager) run(ctx context.Context) {
 	var metricChannel chan metricValue
 
-	ticker := time.NewTicker(2 * time.Second)
-	input := make(chan entity.Option[map[string]entity.DeviceProfile])
+	input := make(chan entity.Option[map[string]entity.DeviceProfile], 1)
 
 	for {
 		select {
@@ -87,7 +85,6 @@ func (m *Manager) run(ctx context.Context) {
 					m.metricServer.Shutdown(context.Background())
 					metricChannel = nil
 					// stop the ticker since we don't have profiles anymore
-					ticker.Stop()
 					zap.S().Info("metric server stopped")
 				}
 				break
@@ -99,19 +96,17 @@ func (m *Manager) run(ctx context.Context) {
 			if m.metricServer == nil {
 				m.metricServer = newMetricServer()
 				metricChannel = m.metricServer.OutputChannel()
-				ticker.Reset(2 * time.Second)
 				zap.S().Info("metric server started")
 			}
 		case metricValue := <-metricChannel:
 			zap.S().Debugw("new metric received", "value", metricValue)
 			m.profilesEvaluator.AddValue(metricValue)
-		case <-ticker.C:
+
 			opt := m.profilesEvaluator.Evaluate()
+			zap.S().Debugw("evaluate profiles", "results", opt.Value)
 			if opt.None {
 				break
 			}
-
-			zap.S().Debugw("evaluate profiles", "results", opt.Value)
 			m.OutputCh <- entity.Message{
 				Kind:    entity.ProfileConfigurationMessage,
 				Payload: opt.Value,
@@ -122,7 +117,8 @@ func (m *Manager) run(ctx context.Context) {
 	}
 }
 
-func (m *Manager) Shutdown() {
+func (m *Manager) Shutdown(ctx context.Context) {
+	zap.S().Info("closing profile manager")
 	if m.metricServer != nil {
 		m.metricServer.Shutdown(context.Background())
 	}

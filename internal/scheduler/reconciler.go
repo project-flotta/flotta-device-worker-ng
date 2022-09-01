@@ -34,10 +34,10 @@ func (r *reconciler) Reconcile(ctx context.Context, tasks []Task, ex Executor) {
 
 func createPodmanSyncFunc() syncTaskFunc {
 	return func(ctx context.Context, t Task, executor Executor) (currentState State, err error) {
-		zap.S().Debugw("start sync", "task_id", t.ID())
-		defer func() {
-			zap.S().Debugw("sync done", "task_id", t.ID(), "current_state", currentState.String(), "error", err)
-		}()
+		// zap.S().Debugw("start sync", "task_id", t.ID())
+		// defer func() {
+		// 	zap.S().Debugw("sync done", "task_id", t.ID(), "current_state", currentState.String(), "error", err)
+		// }()
 
 		status, err := executor.GetState(context.TODO(), t.Workload())
 		if err != nil {
