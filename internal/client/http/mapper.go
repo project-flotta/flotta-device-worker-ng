@@ -221,6 +221,16 @@ func configurationModel2Entity(m models.DeviceConfigurationMessage) entity.Devic
 			podWorkload.ImageRegistryAuth = w.ImageRegistries.AuthFile
 		}
 
+		if len(w.Profiles) > 0 {
+			podWorkload.WorkloadProfiles = make([]entity.WorkloadProfile, 0, len(w.Profiles))
+			for _, profile := range w.Profiles {
+				podWorkload.WorkloadProfiles = append(podWorkload.WorkloadProfiles, entity.WorkloadProfile{
+					Name:       profile.Name,
+					Conditions: profile.Conditions,
+				})
+			}
+		}
+
 		workloads = append(workloads, podWorkload)
 	}
 

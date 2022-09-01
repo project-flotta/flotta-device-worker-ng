@@ -49,6 +49,10 @@ func createPodmanSyncFunc() syncTaskFunc {
 			return t.TargetState(), nil
 		}
 
+		if t.TargetState().OneOf(ExitedState, InactiveState) && state.OneOf(ExitedState, UnknownState) {
+			return t.TargetState(), nil
+		}
+
 		zap.S().Infow("new state found", "task_id", t.ID(), "state", state.String())
 
 		runTask := func(ctx context.Context) (State, error) {

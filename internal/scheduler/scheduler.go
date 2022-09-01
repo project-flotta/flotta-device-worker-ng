@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
@@ -112,15 +113,16 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				break
 			}
 			// add tasks
-			taskToRemove := substract(s.tasks.ToList(), opt.Value)
+			tasksToRemove := substract(s.tasks.ToList(), opt.Value)
 			newWorkloads := substract(opt.Value, s.tasks.ToList())
 			for _, w := range newWorkloads {
+				zap.S().Infow("new task", "task", w.String())
 				t := NewDefaultTask(w.ID(), w)
 				t.SetTargetState(RunningState)
 				s.tasks.Add(t)
 			}
 			// remove task which are not found in the EdgeWorkload manifest
-			for _, t := range taskToRemove {
+			for _, t := range tasksToRemove {
 				t.MarkForDeletion()
 				t.SetTargetState(ExitedState)
 			}
@@ -134,12 +136,51 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					s.tasks.Delete(t)
 				}
 			}
-		case profiles := <-profileCh:
-			zap.S().Debug(profiles)
+		case results := <-profileCh:
+			zap.S().Infow("start evaluating task", "profile evaluation result", results)
+			for _, t := range s.tasks.ToList() {
+				if !evaluate(t, results) {
+					zap.S().Infow("task evaluated to false", "task_id", t.ID())
+					t.SetTargetState(InactiveState)
+				} else {
+					zap.S().Infow("task evaluated to true", "task_id", t.ID())
+					t.SetTargetState(RunningState)
+				}
+			}
 		case <-heartbeat.C:
 			sync <- struct{}{}
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+func evaluate(t Task, results []state.ProfileEvaluationResult) bool {
+	// make a map with task profile conditions
+	m := make(map[string]string)
+	for _, p := range t.Workload().Profiles() {
+		conditions := strings.Join(p.Conditions, ",")
+		m[p.Name] = conditions
+	}
+
+	// for each profile's condition evaluated to true try to find it in the task conditions
+	sum := 0
+	for _, result := range results {
+		taskProfile, found := m[result.Name]
+		if !found {
+			continue
+		}
+
+		for _, condition := range result.ConditionsResults {
+			if condition.Value && strings.Contains(taskProfile, condition.Name) && condition.Error == nil {
+				sum++
+				break
+			}
+		}
+	}
+
+	// if at least one condition for each task's profile is true the sum
+	// must be equal to number of profiles
+	// in this case we consider that the task passed the evaluation
+	return sum == len(t.Workload().Profiles())
 }
