@@ -14,6 +14,33 @@ GIT_COMMIT=$(shell git rev-list -1 HEAD --abbrev-commit)
 IMAGE_TAG=$(VERSION)-$(GIT_COMMIT)
 IMAGE_NAME=device-worker-ng
 
+# Colors used in this Makefile
+escape=$(shell printf '\033')
+RESET_COLOR=$(escape)[0m
+COLOR_YELLOW=$(escape)[38;5;220m
+COLOR_RED=$(escape)[91m
+COLOR_BLUE=$(escape)[94m
+
+COLOR_LEVEL_TRACE=$(escape)[38;5;87m
+COLOR_LEVEL_DEBUG=$(escape)[38;5;87m
+COLOR_LEVEL_INFO=$(escape)[92m
+COLOR_LEVEL_WARN=$(escape)[38;5;208m
+COLOR_LEVEL_ERROR=$(escape)[91m
+COLOR_LEVEL_FATAL=$(escape)[91m
+
+define COLORIZE
+sed -u -e "s/\\\\\"/'/g; \
+s/"message":\(""\)/"message":$(COLOR_BLUE)\1$(RESET_COLOR)/g;        \
+s/ERROR\"\([^\"]*\)\"/error=\"$(COLOR_RED)\1$(RESET_COLOR)\"/g;  \
+s/ProductID:\s\([^\"]*\)/$(COLOR_YELLOW)ProductID: \1$(RESET_COLOR)/g;   \
+s/"trace"/$(COLOR_LEVEL_TRACE)"trace"$(RESET_COLOR)/g;    \
+s/"debug"/$(COLOR_LEVEL_DEBUG)"debug"$(RESET_COLOR)/g;    \
+s/"info"/$(COLOR_LEVEL_INFO)"info"$(RESET_COLOR)/g;       \
+s/"warn"/$(COLOR_LEVEL_WARN)"warning"$(RESET_COLOR)/g; \
+s/"error"/$(COLOR_LEVEL_ERROR)"error"$(RESET_COLOR)/g;    \
+s/"fatal"/level=$(COLOR_LEVEL_FATAL)"fatal"$(RESET_COLOR)/g"
+endef
+
 export GOFLAGS=-mod=vendor -tags=containers_image_openpgp
 
 ##@ General
@@ -112,7 +139,7 @@ build:
 	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_OPTIONS) -o ./bin/device-worker ./main.go
 
 run: build
-	./bin/device-worker --config $(PWD)/resources/config.yaml
+	./bin/device-worker --config $(PWD)/resources/config.yaml | $(COLORIZE)
 
 build.docker:
 	$(DOCKER) build . -t $(IMAGE_NAME):$(IMAGE_TAG)
