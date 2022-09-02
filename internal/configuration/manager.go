@@ -7,7 +7,6 @@ import (
 	"github.com/tupyy/device-worker-ng/internal/configuration/interpreter"
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -61,9 +60,6 @@ func (c *Manager) SetConfiguration(newConf entity.DeviceConfigurationMessage) {
 	}
 
 	zap.S().Debugw("configurations", "old conf", c.conf, "new conf", newConf)
-
-	newlogger := setupLogger()
-	_ = zap.ReplaceGlobals(newlogger)
 
 	// send task to scheduler
 	o := entity.Option[[]entity.Workload]{
@@ -129,37 +125,4 @@ func (c *Manager) createDeviceProfiles(confProfiles map[string]map[string]string
 		Value: profiles,
 		None:  len(profiles) == 0,
 	}, nil
-}
-
-func setupLogger() *zap.Logger {
-	loggerCfg := &zap.Config{
-		Level:    zap.NewAtomicLevelAt(zapcore.InfoLevel),
-		Encoding: "json",
-		EncoderConfig: zapcore.EncoderConfig{
-			TimeKey:        "time",
-			LevelKey:       "severity",
-			CallerKey:      "caller",
-			MessageKey:     "message",
-			StacktraceKey:  "stacktrace",
-			LineEnding:     zapcore.DefaultLineEnding,
-			EncodeTime:     zapcore.RFC3339TimeEncoder,
-			EncodeDuration: zapcore.MillisDurationEncoder,
-			EncodeCaller:   zapcore.ShortCallerEncoder,
-			EncodeLevel:    zapcore.LowercaseLevelEncoder,
-		},
-		OutputPaths:      []string{"stdout"},
-		ErrorOutputPaths: []string{"stderr"},
-	}
-
-	atomicLogLevel, err := zap.ParseAtomicLevel("INFO")
-	if err == nil {
-		loggerCfg.Level = atomicLogLevel
-	}
-
-	plain, err := loggerCfg.Build(zap.AddStacktrace(zap.DPanicLevel))
-	if err != nil {
-		panic(err)
-	}
-
-	return plain
 }
