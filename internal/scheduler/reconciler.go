@@ -49,7 +49,7 @@ func createPodmanSyncFunc() syncTaskFunc {
 			return t.TargetState(), nil
 		}
 
-		if t.TargetState().OneOf(ExitedState, InactiveState) && state.OneOf(ExitedState, UnknownState) {
+		if t.TargetState().OneOf(ReadyState, ExitedState, InactiveState) && state.OneOf(ExitedState, UnknownState) {
 			return t.TargetState(), nil
 		}
 

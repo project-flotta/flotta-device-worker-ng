@@ -48,6 +48,7 @@ func newTask(name string, w entity.Workload) *DefaultTask {
 		name:         name,
 		workload:     w,
 		currentState: ReadyState,
+		targetState:  ReadyState,
 	}
 
 	return &t

@@ -43,6 +43,8 @@ type Scheduler struct {
 	reconciler Reconciler
 	// evaluator evaluates each task based on device's profiles
 	evaluator Evaluator
+	// profileEvaluationResults holds the latest profile evaluation results received from profile manager
+	profileEvaluationResults []state.ProfileEvaluationResult
 }
 
 // New creates a new scheduler with the default heartbeat period of 2 seconds.
@@ -57,9 +59,10 @@ func NewWitHeartbeatPeriod(executor Executor, heartbeatPeriod time.Duration) *Sc
 
 func newExecutor(executor Executor, heartbeatPeriod time.Duration) *Scheduler {
 	return &Scheduler{
-		tasks:      NewStore[Task](),
-		executor:   executor,
-		reconciler: newReconciler(),
+		tasks:                    NewStore[Task](),
+		executor:                 executor,
+		reconciler:               newReconciler(),
+		profileEvaluationResults: make([]state.ProfileEvaluationResult, 0),
 	}
 }
 
@@ -118,8 +121,11 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			for _, w := range newWorkloads {
 				zap.S().Infow("new task", "task", w.String())
 				t := NewDefaultTask(w.ID(), w)
-				t.SetTargetState(RunningState)
 				s.tasks.Add(t)
+				// evaluate task with the latest profile evaluation results
+				if evaluate(t, s.profileEvaluationResults) {
+					t.SetTargetState(RunningState)
+				}
 			}
 			// remove task which are not found in the EdgeWorkload manifest
 			for _, t := range tasksToRemove {
@@ -137,6 +143,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				}
 			}
 		case results := <-profileCh:
+			s.profileEvaluationResults = results
 			zap.S().Infow("start evaluating task", "profile evaluation result", results)
 			for _, t := range s.tasks.ToList() {
 				if !evaluate(t, results) {
@@ -156,6 +163,10 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 }
 
 func evaluate(t Task, results []state.ProfileEvaluationResult) bool {
+	if len(t.Workload().Profiles()) == 0 || len(results) == 0 {
+		return true
+	}
+
 	// make a map with task profile conditions
 	m := make(map[string]string)
 	for _, p := range t.Workload().Profiles() {
