@@ -5,17 +5,16 @@ import (
 )
 
 type profileEvaluator struct {
-	Name      string
-	Variables map[string]interface{}
-	Profile   entity.DeviceProfile
+	Name    string
+	Profile entity.DeviceProfile
 }
 
 // evaluate returns a list of results.
 // Each result has map["profile_name.condition_name"] = bool as value or error if there is an evaluation error
-func (pe *profileEvaluator) evaluate() ProfileEvaluationResult {
+func (pe *profileEvaluator) evaluate(metrics map[string]interface{}) ProfileEvaluationResult {
 	results := make([]ConditionResult, 0, len(pe.Profile.Conditions))
 	for _, condition := range pe.Profile.Conditions {
-		res, err := condition.Expression.Evaluate(pe.Variables)
+		res, err := condition.Expression.Evaluate(metrics)
 		results = append(results, ConditionResult{
 			Name:  condition.Name,
 			Value: res,
@@ -36,26 +35,19 @@ func (p *simpleEvaluator) SetProfiles(profiles map[string]entity.DeviceProfile) 
 	p.evaluators = make([]*profileEvaluator, 0, len(profiles))
 	for k, v := range profiles {
 		e := profileEvaluator{
-			Name:      k,
-			Profile:   v,
-			Variables: make(map[string]interface{}),
+			Name:    k,
+			Profile: v,
 		}
 		p.evaluators = append(p.evaluators, &e)
 	}
 }
 
-func (p *simpleEvaluator) AddValue(newValue metricValue) {
-	for _, e := range p.evaluators {
-		e.Variables[newValue.Name] = newValue.Value
-	}
-}
-
 // Evaluate return a list of results for each profile
 // each profile can be evaluated to bool or error if the there is a ExpressionError.
-func (p *simpleEvaluator) Evaluate() entity.Option[[]ProfileEvaluationResult] {
+func (p *simpleEvaluator) Evaluate(metrics map[string]interface{}) entity.Option[[]ProfileEvaluationResult] {
 	results := make([]ProfileEvaluationResult, 0, len(p.evaluators))
 	for _, e := range p.evaluators {
-		results = append(results, e.evaluate())
+		results = append(results, e.evaluate(metrics))
 	}
 
 	return entity.Option[[]ProfileEvaluationResult]{

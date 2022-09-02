@@ -25,11 +25,10 @@ type ProfileEvaluationResult struct {
 
 type Evaluator interface {
 	SetProfiles(profiles map[string]entity.DeviceProfile)
-	AddValue(newValue metricValue)
 	// Evaluate returns list of results for each profile.
 	// The result is a map having as key the name of the profile and the result as value.
 	// If the profile expression evaluates with error, the error in Result is set accordantly.
-	Evaluate() entity.Option[[]ProfileEvaluationResult]
+	Evaluate(metrics map[string]interface{}) entity.Option[[]ProfileEvaluationResult]
 }
 
 type Manager struct {
@@ -44,6 +43,9 @@ type Manager struct {
 	recv           chan entity.Message
 	cancelFunc     context.CancelFunc
 	metricServer   MetricServer
+	// metrics holds latest metric values received.
+	// metrics are used to evaluate profiles
+	metrics map[string]interface{}
 }
 
 // New returns a new state manager with the default evaluator
@@ -64,6 +66,7 @@ func _new(recv chan entity.Message, evaluator Evaluator) *Manager {
 		recv:              recv,
 		cancelFunc:        cancel,
 		profilesEvaluator: evaluator,
+		metrics:           make(map[string]interface{}),
 	}
 
 	go m.run(ctx)
@@ -75,6 +78,7 @@ func (m *Manager) run(ctx context.Context) {
 	var metricChannel chan metricValue
 
 	input := make(chan entity.Option[map[string]entity.DeviceProfile], 1)
+	evaluate := make(chan struct{}, 1)
 
 	for {
 		select {
@@ -88,18 +92,17 @@ func (m *Manager) run(ctx context.Context) {
 				input <- val
 			}
 		case opt := <-input:
-			// if map empty stop the metric server
+			// if there are no profiles stop metric server
 			if opt.None {
 				if m.metricServer != nil {
 					m.metricServer.Shutdown(context.Background())
 					metricChannel = nil
-					// stop the ticker since we don't have profiles anymore
 					zap.S().Info("metric server stopped")
 				}
 				break
 			}
 
-			zap.S().Info("profile processor created")
+			zap.S().Infow("profiles received", "profiles", opt.Value)
 			m.profilesEvaluator.SetProfiles(opt.Value)
 
 			if m.metricServer == nil {
@@ -107,16 +110,20 @@ func (m *Manager) run(ctx context.Context) {
 				metricChannel = m.metricServer.OutputChannel()
 				zap.S().Info("metric server started")
 			}
-		case metricValue := <-metricChannel:
-			zap.S().Debugw("new metric received", "value", metricValue)
-			m.profilesEvaluator.AddValue(metricValue)
-
-			opt := m.profilesEvaluator.Evaluate()
+			// evaluate again the profiles
+			evaluate <- struct{}{}
+		case metric := <-metricChannel:
+			zap.S().Debugw("new metric received", "value", metric)
+			m.metrics[metric.Name] = metric.Value
+			evaluate <- struct{}{}
+		case <-evaluate:
+			opt := m.profilesEvaluator.Evaluate(m.metrics)
 			zap.S().Debugw("evaluate profiles", "results", opt.Value)
 			if opt.None {
 				break
 			}
 			m.OutputCh <- opt.Value
+
 		case <-ctx.Done():
 			return
 		}
