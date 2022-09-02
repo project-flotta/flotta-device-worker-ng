@@ -111,6 +111,7 @@ func setupLogger() *zap.Logger {
 			StacktraceKey:  "stacktrace",
 			LineEnding:     zapcore.DefaultLineEnding,
 			EncodeTime:     zapcore.RFC3339TimeEncoder,
+			EncodeLevel:    zapcore.LowercaseLevelEncoder,
 			EncodeDuration: zapcore.MillisDurationEncoder,
 			EncodeCaller:   zapcore.ShortCallerEncoder,
 		},
