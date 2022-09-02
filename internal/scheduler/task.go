@@ -21,11 +21,6 @@ type Task interface {
 	IsMarkedForDeletion() bool
 }
 
-type Mark struct {
-	Kind  string
-	Value string
-}
-
 type DefaultTask struct {
 	// workload
 	workload entity.Workload
