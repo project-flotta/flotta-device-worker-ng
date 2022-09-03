@@ -1,4 +1,4 @@
-package scheduler
+package job
 
 type State int
 
@@ -51,7 +51,7 @@ func (ts State) OneOf(states ...State) bool {
 	return false
 }
 
-func mapToState(state string) State {
+func NewState(state string) State {
 	switch state {
 	case "Running":
 		return RunningState

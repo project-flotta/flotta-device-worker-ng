@@ -6,6 +6,9 @@ import (
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
+	"github.com/tupyy/device-worker-ng/internal/scheduler/common"
+	"github.com/tupyy/device-worker-ng/internal/scheduler/job"
+	"github.com/tupyy/device-worker-ng/internal/scheduler/reconcile"
 	"github.com/tupyy/device-worker-ng/internal/state"
 	"go.uber.org/zap"
 )
@@ -15,53 +18,34 @@ const (
 	gracefullShutdown      = 5 * time.Second
 )
 
-//go:generate mockgen -package=scheduler -destination=mock_executor.go --build_flags=--mod=mod . Executor
-type Executor interface {
-	Remove(ctx context.Context, w entity.Workload) error
-	Run(ctx context.Context, w entity.Workload) error
-	Stop(ctx context.Context, w entity.Workload) error
-	GetState(ctx context.Context, w entity.Workload) (string, error)
-	Exists(ctx context.Context, w entity.Workload) (bool, error)
-}
-
-type Reconciler interface {
-	Reconcile(ctx context.Context, tasks []Task, executor Executor)
-}
-
-type Evaluator interface {
-	Evaluate(ctx context.Context, t Task) bool
-}
-
 type Scheduler struct {
-	// tasks holds all the current tasks
-	tasks *Store[Task]
+	// jobs holds all the current jobs
+	jobs *Store[common.Job]
 	// executor
-	executor Executor
+	executor common.Executor
 	// runCancel is the cancel function of the run goroutine
 	runCancel context.CancelFunc
 	// reconciler
-	reconciler Reconciler
-	// evaluator evaluates each task based on device's profiles
-	evaluator Evaluator
+	reconciler common.Reconciler
 	// profileEvaluationResults holds the latest profile evaluation results received from profile manager
 	profileEvaluationResults []state.ProfileEvaluationResult
 }
 
 // New creates a new scheduler with the default heartbeat period of 2 seconds.
-func New(executor Executor) *Scheduler {
-	return newExecutor(executor, defaultHeartbeatPeriod)
+func New(executor common.Executor) *Scheduler {
+	return newScheduler(executor, defaultHeartbeatPeriod)
 }
 
 // New creates a new scheduler with the hearbeat period provided by the user.
-func NewWitHeartbeatPeriod(executor Executor, heartbeatPeriod time.Duration) *Scheduler {
-	return newExecutor(executor, heartbeatPeriod)
+func NewWitHeartbeatPeriod(executor common.Executor, heartbeatPeriod time.Duration) *Scheduler {
+	return newScheduler(executor, heartbeatPeriod)
 }
 
-func newExecutor(executor Executor, heartbeatPeriod time.Duration) *Scheduler {
+func newScheduler(executor common.Executor, heartbeatPeriod time.Duration) *Scheduler {
 	return &Scheduler{
-		tasks:                    NewStore[Task](),
+		jobs:                     NewStore[common.Job](),
 		executor:                 executor,
-		reconciler:               newReconciler(),
+		reconciler:               reconcile.New(),
 		profileEvaluationResults: make([]state.ProfileEvaluationResult, 0),
 	}
 }
@@ -70,7 +54,7 @@ func (s *Scheduler) Start(ctx context.Context, input chan entity.Message, profil
 	runCtx, cancel := context.WithCancel(ctx)
 	s.runCancel = cancel
 
-	taskCh := make(chan entity.Option[[]entity.Workload])
+	jobCh := make(chan entity.Option[[]entity.Workload])
 	go func(ctx context.Context) {
 		for {
 			select {
@@ -81,14 +65,14 @@ func (s *Scheduler) Start(ctx context.Context, input chan entity.Message, profil
 					if !ok {
 						zap.S().Errorf("mismatch message payload type. expected workload. got %v", message)
 					}
-					taskCh <- val
+					jobCh <- val
 				}
 			case <-ctx.Done():
 				return
 			}
 		}
 	}(runCtx)
-	go s.run(runCtx, taskCh, profileUpdateCh)
+	go s.run(runCtx, jobCh, profileUpdateCh)
 }
 
 func (s *Scheduler) Stop(ctx context.Context) {
@@ -109,49 +93,49 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 		select {
 		case opt := <-input:
 			if opt.None {
-				for _, t := range s.tasks.ToList() {
+				for _, t := range s.jobs.ToList() {
 					t.MarkForDeletion()
-					t.SetTargetState(ExitedState)
+					t.SetTargetState(job.ExitedState)
 				}
 				break
 			}
-			// add tasks
-			tasksToRemove := substract(s.tasks.ToList(), opt.Value)
-			newWorkloads := substract(opt.Value, s.tasks.ToList())
+			// add jobs
+			jobsToRemove := substract(s.jobs.ToList(), opt.Value)
+			newWorkloads := substract(opt.Value, s.jobs.ToList())
 			for _, w := range newWorkloads {
-				zap.S().Infow("new task", "task", w.String())
-				t := NewDefaultTask(w.ID(), w)
-				s.tasks.Add(t)
-				// evaluate task with the latest profile evaluation results
-				if evaluate(t, s.profileEvaluationResults) {
-					t.SetTargetState(RunningState)
+				zap.S().Infow("new job", "job", w.String())
+				t := job.NewDefaultJob(w.ID(), w)
+				s.jobs.Add(t)
+				// evaluate job with the latest profile evaluation results
+				if s.evaluate(t, s.profileEvaluationResults) {
+					t.SetTargetState(job.RunningState)
 				}
 			}
-			// remove task which are not found in the EdgeWorkload manifest
-			for _, t := range tasksToRemove {
+			// remove job which are not found in the EdgeWorkload manifest
+			for _, t := range jobsToRemove {
 				t.MarkForDeletion()
-				t.SetTargetState(ExitedState)
+				t.SetTargetState(job.ExitedState)
 			}
 		case <-sync:
-			// reconcile the tasks
-			s.reconciler.Reconcile(context.Background(), s.tasks.Clone().ToList(), s.executor)
-			// remove all task marked for deletion and which are in unknown state
-			for _, t := range s.tasks.ToList() {
-				if t.IsMarkedForDeletion() && t.CurrentState() == UnknownState {
-					zap.S().Infow("task removed", "task_id", t.ID())
-					s.tasks.Delete(t)
+			// reconcile the jobs
+			s.reconciler.Reconcile(context.Background(), s.jobs.Clone().ToList(), s.executor)
+			// remove all job marked for deletion and which are in unknown state
+			for _, j := range s.jobs.ToList() {
+				if j.IsMarkedForDeletion() && j.CurrentState() == job.UnknownState {
+					zap.S().Infow("job removed", "job_id", j.ID())
+					s.jobs.Delete(j)
 				}
 			}
 		case results := <-profileCh:
 			s.profileEvaluationResults = results
-			zap.S().Infow("start evaluating task", "profile evaluation result", results)
-			for _, t := range s.tasks.ToList() {
-				if !evaluate(t, results) {
-					zap.S().Infow("task evaluated to false", "task_id", t.ID())
-					t.SetTargetState(InactiveState)
+			zap.S().Infow("start evaluating job", "profile evaluation result", results)
+			for _, j := range s.jobs.ToList() {
+				if !s.evaluate(j, results) {
+					zap.S().Infow("job evaluated to false", "job_id", j.ID())
+					j.SetTargetState(job.InactiveState)
 				} else {
-					zap.S().Infow("task evaluated to true", "task_id", t.ID())
-					t.SetTargetState(RunningState)
+					zap.S().Infow("job evaluated to true", "job_id", j.ID())
+					j.SetTargetState(job.RunningState)
 				}
 			}
 		case <-heartbeat.C:
@@ -162,36 +146,36 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 	}
 }
 
-func evaluate(t Task, results []state.ProfileEvaluationResult) bool {
-	if len(t.Workload().Profiles()) == 0 || len(results) == 0 {
+func (s *Scheduler) evaluate(j common.Job, results []state.ProfileEvaluationResult) bool {
+	if len(j.Workload().Profiles()) == 0 || len(results) == 0 {
 		return true
 	}
 
-	// make a map with task profile conditions
+	// make a map with job profile conditions
 	m := make(map[string]string)
-	for _, p := range t.Workload().Profiles() {
+	for _, p := range j.Workload().Profiles() {
 		conditions := strings.Join(p.Conditions, ",")
 		m[p.Name] = conditions
 	}
 
-	// for each profile's condition evaluated to true try to find it in the task conditions
+	// for each profile's condition evaluated to true try to find it in the job conditions
 	sum := 0
 	for _, result := range results {
-		taskProfile, found := m[result.Name]
+		jobProfile, found := m[result.Name]
 		if !found {
 			continue
 		}
 
 		for _, condition := range result.ConditionsResults {
-			if condition.Value && strings.Contains(taskProfile, condition.Name) && condition.Error == nil {
+			if condition.Value && strings.Contains(jobProfile, condition.Name) && condition.Error == nil {
 				sum++
 				break
 			}
 		}
 	}
 
-	// if at least one condition for each task's profile is true the sum
+	// if at least one condition for each job's profile is true the sum
 	// must be equal to number of profiles
-	// in this case we consider that the task passed the evaluation
-	return sum == len(t.Workload().Profiles())
+	// in this case we consider that the job passed the evaluation
+	return sum == len(j.Workload().Profiles())
 }

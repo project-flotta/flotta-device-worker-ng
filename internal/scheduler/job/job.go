@@ -1,4 +1,4 @@
-package scheduler
+package job
 
 import (
 	"encoding/json"
@@ -7,21 +7,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type Task interface {
-	Name() string
-	TargetState() State
-	CurrentState() State
-	SetTargetState(state State) error
-	SetCurrentState(state State)
-	String() string
-	ID() string
-	Equal(other Task) bool
-	Workload() entity.Workload
-	MarkForDeletion()
-	IsMarkedForDeletion() bool
-}
-
-type DefaultTask struct {
+type DefaultJob struct {
 	// workload
 	workload entity.Workload
 	// Name of the task
@@ -34,12 +20,12 @@ type DefaultTask struct {
 	markedForDeletion bool
 }
 
-func NewDefaultTask(name string, w entity.Workload) *DefaultTask {
+func NewDefaultJob(name string, w entity.Workload) *DefaultJob {
 	return newTask(name, w)
 }
 
-func newTask(name string, w entity.Workload) *DefaultTask {
-	t := DefaultTask{
+func newTask(name string, w entity.Workload) *DefaultJob {
+	t := DefaultJob{
 		name:         name,
 		workload:     w,
 		currentState: ReadyState,
@@ -49,25 +35,25 @@ func newTask(name string, w entity.Workload) *DefaultTask {
 	return &t
 }
 
-func (t *DefaultTask) SetTargetState(state State) error {
+func (t *DefaultJob) SetTargetState(state State) error {
 	zap.S().Debugw("set target state", "task_id", t.ID(), "target_state", state)
 	t.targetState = state
 	return nil
 }
 
-func (t *DefaultTask) TargetState() State {
+func (t *DefaultJob) TargetState() State {
 	return t.targetState
 }
 
-func (t *DefaultTask) CurrentState() State {
+func (t *DefaultJob) CurrentState() State {
 	return t.currentState
 }
 
-func (t *DefaultTask) SetCurrentState(currentState State) {
+func (t *DefaultJob) SetCurrentState(currentState State) {
 	t.currentState = currentState
 }
 
-func (t *DefaultTask) String() string {
+func (t *DefaultJob) String() string {
 	task := struct {
 		Name         string `json:"name"`
 		Workload     string `json:"workload"`
@@ -88,26 +74,22 @@ func (t *DefaultTask) String() string {
 	return string(json)
 }
 
-func (t *DefaultTask) Equal(other Task) bool {
-	return t.workload.Hash() == other.Workload().Hash()
-}
-
-func (t *DefaultTask) ID() string {
+func (t *DefaultJob) ID() string {
 	return t.workload.ID()
 }
 
-func (t *DefaultTask) Name() string {
+func (t *DefaultJob) Name() string {
 	return t.name
 }
 
-func (t *DefaultTask) Workload() entity.Workload {
+func (t *DefaultJob) Workload() entity.Workload {
 	return t.workload
 }
 
-func (t *DefaultTask) MarkForDeletion() {
+func (t *DefaultJob) MarkForDeletion() {
 	t.markedForDeletion = true
 }
 
-func (t *DefaultTask) IsMarkedForDeletion() bool {
+func (t *DefaultJob) IsMarkedForDeletion() bool {
 	return t.markedForDeletion
 }
