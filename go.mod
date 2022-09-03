@@ -3,6 +3,7 @@ module github.com/tupyy/device-worker-ng
 go 1.18
 
 require (
+	github.com/cenkalti/backoff/v4 v4.1.2
 	github.com/containers/podman/v4 v4.1.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/go-openapi/strfmt v0.21.2

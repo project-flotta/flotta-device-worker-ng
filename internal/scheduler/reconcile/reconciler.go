@@ -19,9 +19,9 @@ func New() *reconciler {
 	r := &reconciler{
 		syncFuncs: make(map[entity.WorkloadKind]syncFunc),
 	}
-	retryWrapper := &retryWrapper{maxAttemps: 3}
+	retry := newRetryWrapper()
 	logger := &logWrapper{}
-	r.syncFuncs[entity.PodKind] = retryWrapper.wrap(logger.wrap(createPodmanSyncFunc()))
+	r.syncFuncs[entity.PodKind] = retry.wrap(logger.wrap(createPodmanSyncFunc()))
 	return r
 }
 

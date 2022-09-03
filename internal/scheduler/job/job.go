@@ -10,21 +10,21 @@ import (
 type DefaultJob struct {
 	// workload
 	workload entity.Workload
-	// Name of the task
+	// Name of the job
 	name string
-	// currentState holds the current state of the task
+	// currentState holds the current state of the job
 	currentState State
-	// targetState holds the desired next state of the task
+	// targetState holds the desired next state of the job
 	// nextState is mutated by the scheduler when it wants to run/stop the workload
 	targetState       State
 	markedForDeletion bool
 }
 
 func NewDefaultJob(name string, w entity.Workload) *DefaultJob {
-	return newTask(name, w)
+	return newjob(name, w)
 }
 
-func newTask(name string, w entity.Workload) *DefaultJob {
+func newjob(name string, w entity.Workload) *DefaultJob {
 	t := DefaultJob{
 		name:         name,
 		workload:     w,
@@ -36,7 +36,7 @@ func newTask(name string, w entity.Workload) *DefaultJob {
 }
 
 func (t *DefaultJob) SetTargetState(state State) error {
-	zap.S().Debugw("set target state", "task_id", t.ID(), "target_state", state)
+	zap.S().Debugw("set target state", "job_id", t.ID(), "target_state", state)
 	t.targetState = state
 	return nil
 }
@@ -54,7 +54,7 @@ func (t *DefaultJob) SetCurrentState(currentState State) {
 }
 
 func (t *DefaultJob) String() string {
-	task := struct {
+	job := struct {
 		Name         string `json:"name"`
 		Workload     string `json:"workload"`
 		CurrentState string `json:"current_state"`
@@ -66,7 +66,7 @@ func (t *DefaultJob) String() string {
 		TargetState:  t.TargetState().String(),
 	}
 
-	json, err := json.Marshal(task)
+	json, err := json.Marshal(job)
 	if err != nil {
 		return "error marshaling"
 	}
