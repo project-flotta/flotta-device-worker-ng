@@ -174,7 +174,7 @@ replace (
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.3.1
 	github.com/metal3-io/baremetal-operator => github.com/openshift/baremetal-operator v0.0.0-20200715132148-0f91f62a41fe // Use OpenShift fork
 	github.com/openshift/hive/pkg/apis => github.com/carbonin/hive/pkg/apis v0.0.0-20210209195732-57e8c3ae12d1
-	github.com/project-flotta/flotta-operator => github.com/tupyy/k4e-operator v0.0.0-20220803065407-02508c71b1fd
+	github.com/project-flotta/flotta-operator => github.com/tupyy/k4e-operator v0.0.0-20220904054425-f5ae49ab9be5
 	k8s.io/apimachinery => k8s.io/apimachinery v0.22.4
 	k8s.io/client-go => k8s.io/client-go v0.0.0-20190620085101-78d2af792bab
 	sigs.k8s.io/cluster-api-provider-aws => github.com/openshift/cluster-api-provider-aws v0.2.1-0.20201022175424-d30c7a274820

@@ -20,6 +20,8 @@ type Workload interface {
 	Kind() WorkloadKind
 	String() string
 	Hash() string
+	Cron() string
+	IsRootless() bool
 	Profiles() []WorkloadProfile
 }
 
@@ -29,6 +31,12 @@ type PodWorkload struct {
 
 	// Namespace of the workload
 	Namespace string
+
+	// cron spec
+	CronSpec string
+
+	// Rootless is true if workload is to be executed in podman rootless
+	Rootless bool
 
 	// Annotations
 	Annotations map[string]string
@@ -98,6 +106,14 @@ func (p PodWorkload) Hash() string {
 
 	sum := sha256.Sum256(bytes.NewBufferString(sb.String()).Bytes())
 	return fmt.Sprintf("%x", sum)
+}
+
+func (p PodWorkload) Cron() string {
+	return p.CronSpec
+}
+
+func (p PodWorkload) IsRootless() bool {
+	return p.Rootless
 }
 
 // AnsibleWorkload represents ansible workload.
