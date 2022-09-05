@@ -132,7 +132,6 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					zap.S().Errorw("failed to reconcile the job", "job_id", j.ID(), "error", err)
 					continue
 				}
-				zap.S().Debugw("job states", "job_id", j.ID(), "current", j.CurrentState(), "target", j.TargetState())
 				j.SetCurrentState(state)
 
 				// If it is marked for deletion but it is still running then keep going with the reconciliation until we stop the job
@@ -158,7 +157,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					* */
 					if j.NeedToRestarted() && j.Retry() != nil {
 						if !j.Retry().CanReconcile() {
-							zap.S().Debugw("cannot reconcile yet", "job_id", j.ID(), "next_retry", j.Retry().Next())
+							zap.S().DPanicw("job cannot be reconciled yet", "job_id", j.ID(), "next_retry", j.Retry().Next())
 							continue
 						}
 						j.Retry().ComputeNext()
@@ -167,7 +166,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					// look at the cron only if we need to run the job.
 					if j.TargetState() == entity.RunningState && j.Cron() != nil {
 						if !j.Cron().CanReconcile() {
-							zap.S().Debugw("cannot reconcile yet", "job_id", j.ID(), "next_cron", j.Cron().Next())
+							zap.S().Debugw("job cannot be reconciled yet", "job_id", j.ID(), "next_cron", j.Cron().Next())
 							continue
 						}
 						j.Cron().ComputeNext()
@@ -206,10 +205,10 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				}
 				switch result {
 				case true:
-					zap.S().Infow("job evaluated to true", "job_id", j.ID())
+					zap.S().Infow("job's profiles evaluated to true", "job_id", j.ID())
 					j.SetTargetState(entity.RunningState)
 				case false:
-					zap.S().Infow("job evaluated to false", "job_id", j.ID())
+					zap.S().Infow("job's profiles evaluated to false", "job_id", j.ID())
 					j.SetTargetState(entity.InactiveState)
 				}
 			}
@@ -232,6 +231,10 @@ func (s *Scheduler) createJob(w entity.Workload) (*entity.Job, error) {
 	return builder.Build()
 }
 
+// HaveToReconcile returns true if a job needs to be reconciled.
+// The conditions for a job to be reconciled are:
+//  - the job is idle, either stopped or never run, and the target_state is RunningState
+//  - the job is running and needs to be stopped
 func (s *Scheduler) HaveToReconcile(j *entity.Job) bool {
 	if j.TargetState() == entity.RunningState && j.CurrentState().OneOf(entity.ReadyState, entity.InactiveState, entity.ExitedState, entity.UnknownState) {
 		return true
