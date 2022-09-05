@@ -105,15 +105,15 @@ func (e *PodmanExecutor) List(ctx context.Context) ([]common.WorkloadInfo, error
 	return reports, nil
 }
 
-func (e *PodmanExecutor) GetState(ctx context.Context, id string) (string, error) {
+func (e *PodmanExecutor) GetState(ctx context.Context, id string) (entity.JobState, error) {
 	info, err := e.List(ctx)
 	if err != nil {
-		return "", err
+		return entity.UnknownState, err
 	}
 	for _, i := range info {
 		if i.Id == id {
-			return i.Status, nil
+			return mapPodmanStatusToEntity(i.Status), nil
 		}
 	}
-	return "unknown", nil
+	return entity.UnknownState, nil
 }

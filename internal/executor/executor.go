@@ -14,7 +14,7 @@ type executor interface {
 	Remove(ctx context.Context, id string) error
 	Run(ctx context.Context, w entity.Workload) error
 	Stop(ctx context.Context, id string) error
-	GetState(ctx context.Context, id string) (string, error)
+	GetState(ctx context.Context, id string) (entity.JobState, error)
 	Exists(ctx context.Context, id string) (bool, error)
 }
 
@@ -62,17 +62,17 @@ func (e *Executor) Stop(ctx context.Context, w entity.Workload) error {
 	return nil
 }
 
-func (e *Executor) GetState(ctx context.Context, w entity.Workload) (string, error) {
+func (e *Executor) GetState(ctx context.Context, w entity.Workload) (entity.JobState, error) {
 	if w.Kind() != entity.PodKind {
 		zap.S().Errorw("workload type unsupported %s", w.Kind())
-		return "", errors.New("only pod workloads are supported")
+		return entity.UnknownState, errors.New("only pod workloads are supported")
 	}
 
 	executor := e.executors[w.Kind()]
 	state, err := executor.GetState(ctx, w.ID())
 	if err != nil {
 		zap.S().Errorw("failed to get workload status", "error", err)
-		return "", err
+		return entity.UnknownState, err
 	}
 	return state, nil
 }

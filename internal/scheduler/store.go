@@ -4,18 +4,18 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/tupyy/device-worker-ng/internal/scheduler/job"
+	entity "github.com/tupyy/device-worker-ng/internal/entity"
 )
 
 // it is *not* thread safe
 type Store struct {
 	lock sync.Mutex
-	jobs []*job.DefaultJob
+	jobs []*entity.Job
 }
 
 func NewStore() *Store {
 	return &Store{
-		jobs: make([]*job.DefaultJob, 0, 3),
+		jobs: make([]*entity.Job, 0, 3),
 	}
 }
 
@@ -23,25 +23,25 @@ func (s *Store) Len() int {
 	return len(s.jobs)
 }
 
-func (s *Store) Get(idx int) (*job.DefaultJob, bool) {
+func (s *Store) Get(idx int) (*entity.Job, bool) {
 	if idx >= len(s.jobs) {
 		return nil, false
 	}
 	return s.jobs[idx], true
 }
 
-func (s *Store) Find(id string) (*job.DefaultJob, bool) {
+func (s *Store) Find(id string) (*entity.Job, bool) {
 	for i, j := range s.jobs {
 		if j.ID() == id {
 			return s.jobs[i], true
 		}
 	}
-	var none *job.DefaultJob
+	var none *entity.Job
 	return none, false
 }
 
-func (s *Store) Delete(element *job.DefaultJob) *job.DefaultJob {
-	var none *job.DefaultJob
+func (s *Store) Delete(element *entity.Job) *entity.Job {
+	var none *entity.Job
 	idx, err := s.index(element.ID())
 	if err != nil {
 		return none
@@ -52,11 +52,11 @@ func (s *Store) Delete(element *job.DefaultJob) *job.DefaultJob {
 	return task
 }
 
-func (s *Store) Add(t *job.DefaultJob) {
+func (s *Store) Add(t *entity.Job) {
 	s.jobs = append(s.jobs, t)
 }
 
-func (s *Store) ToList() []*job.DefaultJob {
+func (s *Store) ToList() []*entity.Job {
 	return s.jobs[:]
 }
 

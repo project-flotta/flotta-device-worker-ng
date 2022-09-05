@@ -1,10 +1,10 @@
-package job
+package entity
 
-type State int
+type JobState int
 
 const (
 	// ReadyState indicates that the task ready to be deloyed
-	ReadyState State = iota
+	ReadyState JobState = iota
 	// RunningState indicates that the task is running
 	RunningState
 	// StoppedState indicates that the task has been stopped without error
@@ -21,7 +21,7 @@ const (
 	InactiveState
 )
 
-func (ts State) String() string {
+func (ts JobState) String() string {
 	switch ts {
 	case ReadyState:
 		return "ready"
@@ -42,28 +42,11 @@ func (ts State) String() string {
 	}
 }
 
-func (ts State) OneOf(states ...State) bool {
+func (ts JobState) OneOf(states ...JobState) bool {
 	for _, s := range states {
 		if ts == s {
 			return true
 		}
 	}
 	return false
-}
-
-func NewState(state string) State {
-	switch state {
-	case "Running":
-		return RunningState
-	case "Degraded":
-		return DegradedState
-	case "Stopped":
-		return StoppedState
-	case "Error":
-		return ErrorState
-	case "Exited":
-		return ExitedState
-	default:
-		return UnknownState
-	}
 }

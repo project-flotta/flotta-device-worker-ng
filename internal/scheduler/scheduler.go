@@ -7,7 +7,6 @@ import (
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"github.com/tupyy/device-worker-ng/internal/scheduler/common"
-	"github.com/tupyy/device-worker-ng/internal/scheduler/job"
 	"github.com/tupyy/device-worker-ng/internal/scheduler/reconcile"
 	"github.com/tupyy/device-worker-ng/internal/state"
 	"go.uber.org/zap"
@@ -29,6 +28,8 @@ type Scheduler struct {
 	reconciler common.Reconciler
 	// profileEvaluationResults holds the latest profile evaluation results received from profile manager
 	profileEvaluationResults []state.ProfileEvaluationResult
+	// futures holds the future for each reconciliation function in progress
+	futures map[string]*entity.Future[entity.Result[entity.JobState]]
 }
 
 // New creates a new scheduler with the default heartbeat period of 2 seconds.
@@ -46,6 +47,7 @@ func newScheduler(executor common.Executor, heartbeatPeriod time.Duration) *Sche
 		jobs:                     NewStore(),
 		executor:                 executor,
 		reconciler:               reconcile.New(),
+		futures:                  make(map[string]*entity.Future[entity.Result[entity.JobState]]),
 		profileEvaluationResults: make([]state.ProfileEvaluationResult, 0),
 	}
 }
@@ -95,7 +97,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			if opt.None {
 				for _, t := range s.jobs.ToList() {
 					t.MarkForDeletion()
-					t.SetTargetState(job.ExitedState)
+					t.SetTargetState(entity.ExitedState)
 				}
 				break
 			}
@@ -112,22 +114,70 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				s.jobs.Add(j)
 				// evaluate job with the latest profile evaluation results
 				if s.evaluate(j, s.profileEvaluationResults) {
-					j.SetTargetState(job.RunningState)
+					j.SetTargetState(entity.RunningState)
 				}
 			}
 			// remove job which are not found in the EdgeWorkload manifest
 			for _, j := range jobsToRemove {
 				j.MarkForDeletion()
-				j.SetTargetState(job.ExitedState)
+				j.SetTargetState(entity.ExitedState)
 			}
 		case <-sync:
 			// reconcile the jobs
-			s.reconciler.Reconcile(context.Background(), s.jobs.Clone().ToList(), s.executor)
-			// remove all job marked for deletion and which are in unknown state
 			for _, j := range s.jobs.ToList() {
-				if j.IsMarkedForDeletion() && j.CurrentState() == job.UnknownState {
+				if j.IsMarkedForDeletion() && j.CurrentState().OneOf(entity.UnknownState, entity.ExitedState, entity.ReadyState) {
 					zap.S().Infow("job removed", "job_id", j.ID())
 					s.jobs.Delete(j)
+					delete(s.futures, j.ID())
+					continue
+				}
+				// get the current state first
+				state, err := s.executor.GetState(context.TODO(), j.Workload())
+				if err != nil {
+					zap.S().Errorw("failed to reconcile the job", "job_id", j.ID(), "error", err)
+					continue
+				}
+				j.SetCurrentState(state)
+
+				if j.CurrentState() == j.TargetState() {
+					continue
+				}
+
+				// if there is already a reconciliation function started check if the future has been resolved.
+				future, found := s.futures[j.ID()]
+				if !found {
+					/* we need to reconcile. There are couple of things to verify:
+					* - if we need to restart the job, check if we can do that now or wait
+					* - if the job needs to be executed, check if there is a cron attached to it and verify if we can started
+					* A job with cron does not have a retry.
+					 */
+					if j.NeedToRestarted() && j.Retry() != nil {
+						if !j.Retry().CanReconcile() {
+							zap.S().Debugw("cannot reconcile yet", "job_id", j.ID(), "next_retry", j.Retry().Next())
+							continue
+						}
+						j.Retry().ComputeNext()
+					}
+
+					if j.TargetState() == entity.RunningState && j.Cron() != nil {
+						if !j.Cron().CanReconcile() {
+							zap.S().Debugw("cannot reconcile yet", "job_id", j.ID(), "next_cron", j.Cron().Next())
+							continue
+						}
+						j.Cron().ComputeNext()
+					}
+					// reconcile
+					f := s.reconciler.Reconcile(context.Background(), j, s.executor)
+					s.futures[j.ID()] = f
+					continue
+				}
+				if result, isResolved := future.Poll(); isResolved {
+					if result.Error != nil {
+						zap.S().Errorw("failed to reconcile the job", "job_id", j.ID(), "error", result.Error)
+					} else {
+						j.SetCurrentState(result.Value)
+					}
+					delete(s.futures, j.ID())
 				}
 			}
 		case results := <-profileCh:
@@ -136,10 +186,10 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			for _, j := range s.jobs.ToList() {
 				if !s.evaluate(j, results) {
 					zap.S().Infow("job evaluated to false", "job_id", j.ID())
-					j.SetTargetState(job.InactiveState)
+					j.SetTargetState(entity.InactiveState)
 				} else {
 					zap.S().Infow("job evaluated to true", "job_id", j.ID())
-					j.SetTargetState(job.RunningState)
+					j.SetTargetState(entity.RunningState)
 				}
 			}
 		case <-heartbeat.C:
@@ -150,18 +200,18 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 	}
 }
 
-func (s *Scheduler) createJob(w entity.Workload) (*job.DefaultJob, error) {
-	builder := job.NewBuilder(w)
+func (s *Scheduler) createJob(w entity.Workload) (*entity.Job, error) {
+	builder := entity.NewBuilder(w)
 	if w.Cron() != "" {
 		builder.WithCron(w.Cron())
 	} else {
-		builder.WithConstantRetry(5 * time.Second)
+		builder.WithConstantRetry(20 * time.Second)
 	}
 
 	return builder.Build()
 }
 
-func (s *Scheduler) evaluate(j *job.DefaultJob, results []state.ProfileEvaluationResult) bool {
+func (s *Scheduler) evaluate(j *entity.Job, results []state.ProfileEvaluationResult) bool {
 	if len(j.Workload().Profiles()) == 0 || len(results) == 0 {
 		return true
 	}

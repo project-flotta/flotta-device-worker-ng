@@ -3,8 +3,8 @@ package reconcile
 import (
 	context "context"
 
+	"github.com/tupyy/device-worker-ng/internal/entity"
 	"github.com/tupyy/device-worker-ng/internal/scheduler/common"
-	"github.com/tupyy/device-worker-ng/internal/scheduler/job"
 	"go.uber.org/zap"
 )
 
@@ -17,11 +17,11 @@ func (l *logger) wrap(s syncFunc) syncFunc {
 	return l.sync
 }
 
-func (l *logger) sync(ctx context.Context, j *job.DefaultJob, executor common.Executor) error {
+func (l *logger) sync(ctx context.Context, j *entity.Job, executor common.Executor) (entity.JobState, error) {
 	oldState := j.CurrentState()
-	err := l.nextSyncFunc(ctx, j, executor)
-	if oldState != j.CurrentState() {
-		zap.S().Infof("job '%s' changed state from '%s' to '%s'", j.ID(), oldState.String(), j.CurrentState().String())
+	state, err := l.nextSyncFunc(ctx, j, executor)
+	if oldState != state {
+		zap.S().Infof("job '%s' changed state from '%s' to '%s'", j.ID(), oldState.String(), state)
 	}
-	return err
+	return state, err
 }
