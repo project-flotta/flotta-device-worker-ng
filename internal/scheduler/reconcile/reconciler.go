@@ -48,20 +48,16 @@ func futureWrapper(ch chan entity.Result[entity.JobState], fn func() (entity.Job
 }
 
 func createPodmanSyncFunc() syncFunc {
-	return func(ctx context.Context, j *entity.Job, executor common.Executor) (entity.JobState, error) {
+	return func(ctx context.Context, j *entity.Job, executor common.Executor) (state entity.JobState, err error) {
 		if j.CurrentState() == j.TargetState() {
 			return j.CurrentState(), nil
 		}
 
-		if j.TargetState().OneOf(entity.ReadyState, entity.ExitedState, entity.InactiveState) && j.CurrentState().OneOf(entity.ExitedState, entity.UnknownState) {
-			return j.TargetState(), nil
-		}
-
-		runJob := func(ctx context.Context) (entity.JobState, error) {
+		if j.TargetState() == entity.RunningState {
 			zap.S().Infow("run job", "job_id", j.ID())
-			exists, err := executor.Exists(ctx, j.Workload())
-			if err != nil {
-				return entity.UnknownState, err
+			exists, errE := executor.Exists(ctx, j.Workload())
+			if errE != nil {
+				return entity.UnknownState, errE
 			}
 			if exists {
 				if err := executor.Remove(ctx, j.Workload()); err != nil {
@@ -72,14 +68,14 @@ func createPodmanSyncFunc() syncFunc {
 				return entity.UnknownState, err
 			}
 			<-time.After(1 * time.Second)
-			newState, err := executor.GetState(ctx, j.Workload())
+			state, err = executor.GetState(ctx, j.Workload())
 			if err != nil {
 				return entity.UnknownState, err
 			}
-			return newState, nil
+			return
 		}
 
-		stopJob := func(ctx context.Context) (entity.JobState, error) {
+		if j.TargetState().OneOf(entity.ExitedState, entity.InactiveState) {
 			zap.S().Infow("stop job", "job_id", j.ID())
 			if err := executor.Stop(ctx, j.Workload()); err != nil {
 				return entity.UnknownState, err
@@ -88,25 +84,13 @@ func createPodmanSyncFunc() syncFunc {
 				return entity.UnknownState, err
 			}
 			<-time.After(1 * time.Second)
-			newState, err := executor.GetState(ctx, j.Workload())
+			state, err = executor.GetState(ctx, j.Workload())
 			if err != nil {
 				return entity.UnknownState, err
 			}
-			return newState, nil
+			return
 		}
 
-		var (
-			currentState entity.JobState
-			err          error
-		)
-		if j.TargetState() == entity.RunningState && j.CurrentState().OneOf(entity.ReadyState, entity.UnknownState, entity.ExitedState, entity.DegradedState) {
-			currentState, err = runJob(context.TODO())
-		}
-
-		if j.TargetState().OneOf(entity.ExitedState, entity.InactiveState) {
-			currentState, err = stopJob(context.TODO())
-		}
-
-		return currentState, err
+		return j.CurrentState(), nil
 	}
 }

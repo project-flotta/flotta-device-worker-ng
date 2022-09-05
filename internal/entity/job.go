@@ -6,6 +6,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/robfig/cron"
+	"go.uber.org/zap"
 )
 
 type CronJob struct {
@@ -112,6 +113,7 @@ func (j *Job) Workload() Workload {
 }
 
 func (j *Job) MarkForDeletion() {
+	zap.S().Debugw("job marked for deletion", "job_id", j.ID())
 	j.markedForDeletion = true
 }
 

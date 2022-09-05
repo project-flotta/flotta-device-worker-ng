@@ -113,7 +113,9 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				}
 				s.jobs.Add(j)
 				// evaluate job with the latest profile evaluation results
-				if s.evaluate(j, s.profileEvaluationResults) {
+				if result, err := s.evaluate(j, s.profileEvaluationResults); err != nil {
+					zap.S().Warnw("failed to evaluate profile", "error", err)
+				} else if result {
 					j.SetTargetState(entity.RunningState)
 				}
 			}
@@ -123,34 +125,37 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				j.SetTargetState(entity.ExitedState)
 			}
 		case <-sync:
-			// reconcile the jobs
 			for _, j := range s.jobs.ToList() {
-				if j.IsMarkedForDeletion() && j.CurrentState().OneOf(entity.UnknownState, entity.ExitedState, entity.ReadyState) {
-					zap.S().Infow("job removed", "job_id", j.ID())
-					s.jobs.Delete(j)
-					delete(s.futures, j.ID())
-					continue
-				}
 				// get the current state first
 				state, err := s.executor.GetState(context.TODO(), j.Workload())
 				if err != nil {
 					zap.S().Errorw("failed to reconcile the job", "job_id", j.ID(), "error", err)
 					continue
 				}
+				zap.S().Debugw("job states", "job_id", j.ID(), "current", j.CurrentState(), "target", j.TargetState())
 				j.SetCurrentState(state)
 
-				if j.CurrentState() == j.TargetState() {
+				// If it is marked for deletion but it is still running then keep going with the reconciliation until we stop the job
+				// and then remove it
+				if j.IsMarkedForDeletion() && j.CurrentState().OneOf(entity.UnknownState, entity.ExitedState, entity.ReadyState) {
+					zap.S().Infow("job removed", "job_id", j.ID())
+					s.jobs.Delete(j)
+					delete(s.futures, j.ID())
+					continue
+				}
+
+				if !s.HaveToReconcile(j) {
 					continue
 				}
 
 				// if there is already a reconciliation function started check if the future has been resolved.
 				future, found := s.futures[j.ID()]
 				if !found {
-					/* we need to reconcile. There are couple of things to verify:
+					/* at this point we need to reconcile. There are couple of things to verify:
 					* - if we need to restart the job, check if we can do that now or wait
 					* - if the job needs to be executed, check if there is a cron attached to it and verify if we can started
-					* A job with cron does not have a retry.
-					 */
+					* Because cron is basically a retry at a certain time in future, a job cannot have *both* a cron and a retry attached.
+					* */
 					if j.NeedToRestarted() && j.Retry() != nil {
 						if !j.Retry().CanReconcile() {
 							zap.S().Debugw("cannot reconcile yet", "job_id", j.ID(), "next_retry", j.Retry().Next())
@@ -159,6 +164,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 						j.Retry().ComputeNext()
 					}
 
+					// look at the cron only if we need to run the job.
 					if j.TargetState() == entity.RunningState && j.Cron() != nil {
 						if !j.Cron().CanReconcile() {
 							zap.S().Debugw("cannot reconcile yet", "job_id", j.ID(), "next_cron", j.Cron().Next())
@@ -167,10 +173,15 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 						j.Cron().ComputeNext()
 					}
 					// reconcile
-					f := s.reconciler.Reconcile(context.Background(), j, s.executor)
-					s.futures[j.ID()] = f
+					future := s.reconciler.Reconcile(context.Background(), j, s.executor)
+					s.futures[j.ID()] = future
 					continue
 				}
+				/*
+				* A resolved future means the reconciliation function returned.
+				* The result could be either a new current state or an error in case that the executor failed to reconcile the job
+				* In both cases, we remove the future. At the next heartbeat, a new reconciliation function will be executed with a new future.
+				* */
 				if result, isResolved := future.Poll(); isResolved {
 					if result.Error != nil {
 						zap.S().Errorw("failed to reconcile the job", "job_id", j.ID(), "error", result.Error)
@@ -184,12 +195,22 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			s.profileEvaluationResults = results
 			zap.S().Infow("start evaluating job", "profile evaluation result", results)
 			for _, j := range s.jobs.ToList() {
-				if !s.evaluate(j, results) {
-					zap.S().Infow("job evaluated to false", "job_id", j.ID())
-					j.SetTargetState(entity.InactiveState)
-				} else {
+				// don't evaluate job marked for deletion
+				if j.IsMarkedForDeletion() {
+					continue
+				}
+				result, err := s.evaluate(j, results)
+				if err != nil {
+					zap.S().Warnw("failed to evaluate profiles", "job_id", j.ID(), "error", err)
+					continue
+				}
+				switch result {
+				case true:
 					zap.S().Infow("job evaluated to true", "job_id", j.ID())
 					j.SetTargetState(entity.RunningState)
+				case false:
+					zap.S().Infow("job evaluated to false", "job_id", j.ID())
+					j.SetTargetState(entity.InactiveState)
 				}
 			}
 		case <-heartbeat.C:
@@ -211,9 +232,21 @@ func (s *Scheduler) createJob(w entity.Workload) (*entity.Job, error) {
 	return builder.Build()
 }
 
-func (s *Scheduler) evaluate(j *entity.Job, results []state.ProfileEvaluationResult) bool {
-	if len(j.Workload().Profiles()) == 0 || len(results) == 0 {
+func (s *Scheduler) HaveToReconcile(j *entity.Job) bool {
+	if j.TargetState() == entity.RunningState && j.CurrentState().OneOf(entity.ReadyState, entity.InactiveState, entity.ExitedState, entity.UnknownState) {
 		return true
+	}
+
+	if j.TargetState().OneOf(entity.ExitedState, entity.InactiveState) && j.CurrentState() == entity.RunningState {
+		return true
+	}
+
+	return false
+}
+
+func (s *Scheduler) evaluate(j *entity.Job, results []state.ProfileEvaluationResult) (bool, error) {
+	if len(j.Workload().Profiles()) == 0 || len(results) == 0 {
+		return true, nil
 	}
 
 	// make a map with job profile conditions
@@ -232,6 +265,9 @@ func (s *Scheduler) evaluate(j *entity.Job, results []state.ProfileEvaluationRes
 		}
 
 		for _, condition := range result.ConditionsResults {
+			if condition.Error != nil {
+				return false, condition.Error
+			}
 			if condition.Value && strings.Contains(jobProfile, condition.Name) && condition.Error == nil {
 				sum++
 				break
@@ -242,5 +278,5 @@ func (s *Scheduler) evaluate(j *entity.Job, results []state.ProfileEvaluationRes
 	// if at least one condition for each job's profile is true the sum
 	// must be equal to number of profiles
 	// in this case we consider that the job passed the evaluation
-	return sum == len(j.Workload().Profiles())
+	return sum == len(j.Workload().Profiles()), nil
 }
