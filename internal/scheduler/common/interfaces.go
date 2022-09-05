@@ -7,21 +7,8 @@ import (
 	"github.com/tupyy/device-worker-ng/internal/scheduler/job"
 )
 
-type Job interface {
-	Name() string
-	TargetState() job.State
-	CurrentState() job.State
-	SetTargetState(state job.State) error
-	SetCurrentState(state job.State)
-	String() string
-	ID() string
-	Workload() entity.Workload
-	MarkForDeletion()
-	IsMarkedForDeletion() bool
-}
-
 type Reconciler interface {
-	Reconcile(ctx context.Context, jobs []Job, executor Executor)
+	Reconcile(ctx context.Context, jobs []*job.DefaultJob, executor Executor)
 }
 
 //go:generate mockgen -package=scheduler -destination=mock_executor.go --build_flags=--mod=mod . Executor

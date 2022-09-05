@@ -2,68 +2,76 @@ package job
 
 import (
 	"encoding/json"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
+	"github.com/robfig/cron"
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"go.uber.org/zap"
 )
 
+type CronJob struct {
+	// next time the job can be reconciled
+	Next     time.Time
+	schedule cron.Schedule
+}
+
+func (cj *CronJob) ComputeNext() {
+	cj.Next = cj.schedule.Next(time.Now())
+}
+
+type RetryJob struct {
+	NextRetry time.Time
+	b         backoff.BackOff
+}
+
+func (rj *RetryJob) ComputeNextRetryTime() {
+	rj.NextRetry = rj.NextRetry.Add(rj.b.NextBackOff())
+}
+
 type DefaultJob struct {
 	// workload
 	workload entity.Workload
-	// Name of the job
-	name string
 	// currentState holds the current state of the job
 	currentState State
 	// targetState holds the desired next state of the job
 	// nextState is mutated by the scheduler when it wants to run/stop the workload
-	targetState       State
+	targetState State
+	// markedForDeletion is true if the job has to be deleted
 	markedForDeletion bool
+	cron              *CronJob
+	retry             *RetryJob
 }
 
-func NewDefaultJob(name string, w entity.Workload) *DefaultJob {
-	return newjob(name, w)
-}
-
-func newjob(name string, w entity.Workload) *DefaultJob {
-	t := DefaultJob{
-		name:         name,
-		workload:     w,
-		currentState: ReadyState,
-		targetState:  ReadyState,
-	}
-
-	return &t
-}
-
-func (t *DefaultJob) SetTargetState(state State) error {
-	zap.S().Debugw("set target state", "job_id", t.ID(), "target_state", state)
-	t.targetState = state
+func (j *DefaultJob) SetTargetState(state State) error {
+	zap.S().Debugw("set target state", "job_id", j.ID(), "target_state", state)
+	j.targetState = state
 	return nil
 }
 
-func (t *DefaultJob) TargetState() State {
-	return t.targetState
+func (j *DefaultJob) TargetState() State {
+	return j.targetState
 }
 
-func (t *DefaultJob) CurrentState() State {
-	return t.currentState
+func (j *DefaultJob) CurrentState() State {
+	return j.currentState
 }
 
-func (t *DefaultJob) SetCurrentState(currentState State) {
-	t.currentState = currentState
+func (j *DefaultJob) SetCurrentState(currentState State) {
+	j.currentState = currentState
 }
 
-func (t *DefaultJob) String() string {
+func (j *DefaultJob) String() string {
 	job := struct {
-		Name         string `json:"name"`
+		ID           string `json:"id"`
 		Workload     string `json:"workload"`
 		CurrentState string `json:"current_state"`
 		TargetState  string `json:"target_state"`
 	}{
-		Name:         t.name,
-		Workload:     t.workload.String(),
-		CurrentState: t.CurrentState().String(),
-		TargetState:  t.TargetState().String(),
+		ID:           j.ID(),
+		Workload:     j.workload.String(),
+		CurrentState: j.CurrentState().String(),
+		TargetState:  j.TargetState().String(),
 	}
 
 	json, err := json.Marshal(job)
@@ -74,22 +82,26 @@ func (t *DefaultJob) String() string {
 	return string(json)
 }
 
-func (t *DefaultJob) ID() string {
-	return t.workload.ID()
+func (j *DefaultJob) ID() string {
+	return j.workload.ID()
 }
 
-func (t *DefaultJob) Name() string {
-	return t.name
+func (j *DefaultJob) Workload() entity.Workload {
+	return j.workload
 }
 
-func (t *DefaultJob) Workload() entity.Workload {
-	return t.workload
+func (j *DefaultJob) MarkForDeletion() {
+	j.markedForDeletion = true
 }
 
-func (t *DefaultJob) MarkForDeletion() {
-	t.markedForDeletion = true
+func (j *DefaultJob) IsMarkedForDeletion() bool {
+	return j.markedForDeletion
 }
 
-func (t *DefaultJob) IsMarkedForDeletion() bool {
-	return t.markedForDeletion
+func (j *DefaultJob) Cron() *CronJob {
+	return j.cron
+}
+
+func (j *DefaultJob) Retry() *RetryJob {
+	return j.retry
 }

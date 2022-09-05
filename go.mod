@@ -13,6 +13,7 @@ require (
 	github.com/onsi/gomega v1.19.0
 	github.com/openshift/assisted-installer-agent v1.0.10-0.20211027185717-53b0eacfa147
 	github.com/project-flotta/flotta-operator v0.2.0
+	github.com/robfig/cron v1.2.0
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.12.0

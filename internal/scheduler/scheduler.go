@@ -20,7 +20,7 @@ const (
 
 type Scheduler struct {
 	// jobs holds all the current jobs
-	jobs *Store[common.Job]
+	jobs *Store
 	// executor
 	executor common.Executor
 	// runCancel is the cancel function of the run goroutine
@@ -43,7 +43,7 @@ func NewWitHeartbeatPeriod(executor common.Executor, heartbeatPeriod time.Durati
 
 func newScheduler(executor common.Executor, heartbeatPeriod time.Duration) *Scheduler {
 	return &Scheduler{
-		jobs:                     NewStore[common.Job](),
+		jobs:                     NewStore(),
 		executor:                 executor,
 		reconciler:               reconcile.New(),
 		profileEvaluationResults: make([]state.ProfileEvaluationResult, 0),
@@ -104,17 +104,21 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			newWorkloads := substract(opt.Value, s.jobs.ToList())
 			for _, w := range newWorkloads {
 				zap.S().Infow("new job", "job", w.String())
-				t := job.NewDefaultJob(w.ID(), w)
-				s.jobs.Add(t)
+				j, err := s.createJob(w)
+				if err != nil {
+					zap.S().Errorw("failed to create job", "error", err)
+					continue
+				}
+				s.jobs.Add(j)
 				// evaluate job with the latest profile evaluation results
-				if s.evaluate(t, s.profileEvaluationResults) {
-					t.SetTargetState(job.RunningState)
+				if s.evaluate(j, s.profileEvaluationResults) {
+					j.SetTargetState(job.RunningState)
 				}
 			}
 			// remove job which are not found in the EdgeWorkload manifest
-			for _, t := range jobsToRemove {
-				t.MarkForDeletion()
-				t.SetTargetState(job.ExitedState)
+			for _, j := range jobsToRemove {
+				j.MarkForDeletion()
+				j.SetTargetState(job.ExitedState)
 			}
 		case <-sync:
 			// reconcile the jobs
@@ -146,7 +150,18 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 	}
 }
 
-func (s *Scheduler) evaluate(j common.Job, results []state.ProfileEvaluationResult) bool {
+func (s *Scheduler) createJob(w entity.Workload) (*job.DefaultJob, error) {
+	builder := job.NewBuilder(w)
+	if w.Cron() != "" {
+		builder.WithCron(w.Cron())
+	} else {
+		builder.WithConstantRetry(5 * time.Second)
+	}
+
+	return builder.Build()
+}
+
+func (s *Scheduler) evaluate(j *job.DefaultJob, results []state.ProfileEvaluationResult) bool {
 	if len(j.Workload().Profiles()) == 0 || len(results) == 0 {
 		return true
 	}

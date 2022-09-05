@@ -3,85 +3,71 @@ package scheduler
 import (
 	"errors"
 	"sync"
+
+	"github.com/tupyy/device-worker-ng/internal/scheduler/job"
 )
 
-type Element interface {
-	Name() string
-	ID() string
-}
-
 // it is *not* thread safe
-type Store[T Element] struct {
-	lock  sync.Mutex
-	tasks []T
+type Store struct {
+	lock sync.Mutex
+	jobs []*job.DefaultJob
 }
 
-func NewStore[T Element]() *Store[T] {
-	return &Store[T]{
-		tasks: make([]T, 0, 3),
+func NewStore() *Store {
+	return &Store{
+		jobs: make([]*job.DefaultJob, 0, 3),
 	}
 }
 
-func (s *Store[T]) Len() int {
-	return len(s.tasks)
+func (s *Store) Len() int {
+	return len(s.jobs)
 }
 
-func (s *Store[T]) Get(idx int) (T, bool) {
-	var none T
-	if idx >= len(s.tasks) {
-		return none, false
+func (s *Store) Get(idx int) (*job.DefaultJob, bool) {
+	if idx >= len(s.jobs) {
+		return nil, false
 	}
-	return s.tasks[idx], true
+	return s.jobs[idx], true
 }
 
-func (s *Store[T]) FindByID(id string) (T, bool) {
-	for i, t := range s.tasks {
-		if t.ID() == id {
-			return s.tasks[i], true
+func (s *Store) Find(id string) (*job.DefaultJob, bool) {
+	for i, j := range s.jobs {
+		if j.ID() == id {
+			return s.jobs[i], true
 		}
 	}
-	var none T
+	var none *job.DefaultJob
 	return none, false
 }
 
-func (s *Store[T]) FindByName(name string) (T, bool) {
-	for i, t := range s.tasks {
-		if t.Name() == name {
-			return s.tasks[i], true
-		}
-	}
-	var none T
-	return none, false
-}
-
-func (s *Store[T]) Delete(element T) T {
-	var none T
+func (s *Store) Delete(element *job.DefaultJob) *job.DefaultJob {
+	var none *job.DefaultJob
 	idx, err := s.index(element.ID())
 	if err != nil {
 		return none
 	}
 
-	task := s.tasks[idx]
-	s.tasks = append(s.tasks[:idx], s.tasks[idx+1:]...)
+	task := s.jobs[idx]
+	s.jobs = append(s.jobs[:idx], s.jobs[idx+1:]...)
 	return task
 }
 
-func (s *Store[T]) Add(t T) {
-	s.tasks = append(s.tasks, t)
+func (s *Store) Add(t *job.DefaultJob) {
+	s.jobs = append(s.jobs, t)
 }
 
-func (s *Store[T]) ToList() []T {
-	return s.tasks[:]
+func (s *Store) ToList() []*job.DefaultJob {
+	return s.jobs[:]
 }
 
-func (s *Store[T]) Clone() *Store[T] {
-	return &Store[T]{
-		tasks: s.tasks[:],
+func (s *Store) Clone() *Store {
+	return &Store{
+		jobs: s.jobs[:],
 	}
 }
 
-func (s *Store[T]) index(id string) (int, error) {
-	for i, t := range s.tasks {
+func (s *Store) index(id string) (int, error) {
+	for i, t := range s.jobs {
 		if t.ID() == id {
 			return i, nil
 		}

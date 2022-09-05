@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type syncFunc func(ctx context.Context, t common.Job, executor common.Executor) error
+type syncFunc func(ctx context.Context, t *job.DefaultJob, executor common.Executor) error
 
 type reconciler struct {
 	syncFuncs map[entity.WorkloadKind]syncFunc
@@ -19,13 +19,14 @@ func New() *reconciler {
 	r := &reconciler{
 		syncFuncs: make(map[entity.WorkloadKind]syncFunc),
 	}
-	retry := newRetryWrapper()
-	logger := &logWrapper{}
-	r.syncFuncs[entity.PodKind] = retry.wrap(logger.wrap(createPodmanSyncFunc()))
+	retry := &retryHandler{}
+	logger := &logger{}
+	cron := cronHandler{}
+	r.syncFuncs[entity.PodKind] = cron.wrap(retry.wrap(logger.wrap(createPodmanSyncFunc())))
 	return r
 }
 
-func (r *reconciler) Reconcile(ctx context.Context, jobs []common.Job, ex common.Executor) {
+func (r *reconciler) Reconcile(ctx context.Context, jobs []*job.DefaultJob, ex common.Executor) {
 	for _, j := range jobs {
 		fn, ok := r.syncFuncs[j.Workload().Kind()]
 		if !ok {
@@ -37,7 +38,7 @@ func (r *reconciler) Reconcile(ctx context.Context, jobs []common.Job, ex common
 }
 
 func createPodmanSyncFunc() syncFunc {
-	return func(ctx context.Context, j common.Job, executor common.Executor) error {
+	return func(ctx context.Context, j *job.DefaultJob, executor common.Executor) error {
 		if j.CurrentState() == j.TargetState() {
 			return nil
 		}

@@ -214,7 +214,7 @@ func configurationModel2Entity(m models.DeviceConfigurationMessage) entity.Devic
 			Annotations:   w.Annotations,
 			Configmaps:    w.Configmaps,
 			Labels:        w.Labels,
-			Cron:          w.Cron,
+			CronSpec:      w.Cron,
 			Rootless:      w.Rootless,
 			Specification: w.Specification,
 		}
