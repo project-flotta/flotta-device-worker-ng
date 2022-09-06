@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -14,14 +15,15 @@ import (
 )
 
 const (
-	prefix     = "EDGE_DEVICE"
-	logLevel   = "LOG_LEVEL"
-	caRoot     = "CA_ROOT"
-	certFile   = "CERT"
-	privateKey = "KEY"
-	server     = "SERVER"
-	namespace  = "NAMESPACE"
-	deviceID   = "DEVICE_ID"
+	prefix          = "EDGE_DEVICE"
+	logLevel        = "LOG_LEVEL"
+	caRoot          = "CA_ROOT"
+	certFile        = "CERT"
+	privateKey      = "KEY"
+	server          = "SERVER"
+	namespace       = "NAMESPACE"
+	deviceID        = "DEVICE_ID"
+	xdg_runtime_dir = "XDG_RUNTIME_DIR"
 
 	gracefulShutdown        = "GRACEFUL_SHUTDOWN"
 	defaultGracefulShutdown = 5 * time.Second
@@ -147,4 +149,11 @@ func GetRepoRetryConfig() RetryConfig {
 	}
 
 	return config
+}
+
+func GetXDGRuntimeDir() string {
+	if v.IsSet(xdg_runtime_dir) {
+		return v.GetString(xdg_runtime_dir)
+	}
+	return os.Getenv("XDG_RUNTIME_DIR")
 }

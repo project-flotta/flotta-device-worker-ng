@@ -141,6 +141,9 @@ build:
 run: build
 	./bin/device-worker --config $(PWD)/resources/config.yaml | $(COLORIZE)
 
+run.root: build
+	sudo ./bin/device-worker --config $(PWD)/resources/config.yaml | $(COLORIZE)
+
 build.docker:
 	$(DOCKER) build . -t $(IMAGE_NAME):$(IMAGE_TAG)
 

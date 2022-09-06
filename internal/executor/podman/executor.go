@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	config "github.com/tupyy/device-worker-ng/configuration"
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"github.com/tupyy/device-worker-ng/internal/executor/common"
 	"go.uber.org/zap"
@@ -16,7 +17,13 @@ type PodmanExecutor struct {
 }
 
 func New(rootless bool) (*PodmanExecutor, error) {
-	podman, err := NewPodman(os.Getenv("XDG_RUNTIME_DIR"))
+	var socket string
+	if rootless {
+		socket = config.GetXDGRuntimeDir()
+	} else {
+		socket = "/run"
+	}
+	podman, err := NewPodman(socket)
 	if err != nil {
 		return nil, err
 	}
@@ -54,8 +61,6 @@ func (e *PodmanExecutor) Run(ctx context.Context, w entity.Workload) error {
 		return fmt.Errorf("%w %s workload_name '%s'", common.ErrDeployingWorkload, err, workload.Name)
 	}
 
-	zap.S().Infow("workload started", "hash", w.Hash(), "report", report)
-
 	err = e.podman.Start(report[0].Id)
 	if err != nil {
 		return fmt.Errorf("%w workload name '%s', error %s", common.ErrRunningWorkload, workload.Name, err)
@@ -73,7 +78,6 @@ func (e *PodmanExecutor) Start(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("%w workload id '%s', error %s", common.ErrRunningWorkload, id, err)
 	}
-	zap.S().Infow("workload started", "workload_id", id)
 	return nil
 }
 
@@ -83,7 +87,6 @@ func (e *PodmanExecutor) Stop(ctx context.Context, id string) error {
 		zap.S().Errorw("failed to stop pod", "error", err, "pod_id", id)
 		return fmt.Errorf("%w %s pod_id: %s", common.ErrStoppingWorkload, err, id)
 	}
-	zap.S().Infow("workload stopped", "workload_id", id)
 	return nil
 }
 
@@ -93,7 +96,6 @@ func (e *PodmanExecutor) Remove(ctx context.Context, id string) error {
 		zap.S().Errorw("failed to remove pod", "error", err, "pod_id", id)
 		return fmt.Errorf("%w %s pod_id: %s", common.ErrRemoveWorkload, err, id)
 	}
-	zap.S().Infow("workload removed", "workload_id", id)
 	return nil
 }
 

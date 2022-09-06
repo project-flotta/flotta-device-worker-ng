@@ -103,6 +103,8 @@ func (p PodWorkload) Hash() string {
 	fmt.Fprintf(&sb, "%s", p.ImageRegistryAuth)
 	fmt.Fprintf(&sb, "%s", p.Specification)
 	fmt.Fprintf(&sb, "%+v", p.WorkloadProfiles)
+	fmt.Fprintf(&sb, "%v", p.Rootless)
+	fmt.Fprintf(&sb, "%s", p.CronSpec)
 
 	sum := sha256.Sum256(bytes.NewBufferString(sb.String()).Bytes())
 	return fmt.Sprintf("%x", sum)
