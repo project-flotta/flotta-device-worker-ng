@@ -16,8 +16,8 @@ import (
 	"github.com/tupyy/device-worker-ng/internal/configuration"
 	"github.com/tupyy/device-worker-ng/internal/edge"
 	"github.com/tupyy/device-worker-ng/internal/executor"
+	"github.com/tupyy/device-worker-ng/internal/profile"
 	"github.com/tupyy/device-worker-ng/internal/scheduler"
-	"github.com/tupyy/device-worker-ng/internal/state"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -63,11 +63,11 @@ var rootCmd = &cobra.Command{
 		}
 
 		controller := edge.New(httpClient, confManager, certManager)
-		stateManager := state.New(confManager.StateManagerCh)
+		profileManager := profile.New(confManager.StateManagerCh)
 		scheduler := scheduler.New(executor)
 
 		ctx, cancel := context.WithCancel(context.Background())
-		scheduler.Start(ctx, confManager.SchedulerCh, stateManager.OutputCh)
+		scheduler.Start(ctx, confManager.SchedulerCh, profileManager.OutputCh)
 
 		done := make(chan os.Signal, 1)
 		signal.Notify(done, os.Interrupt, os.Kill)
@@ -76,7 +76,7 @@ var rootCmd = &cobra.Command{
 
 		cancel()
 		controller.Shutdown(ctx)
-		stateManager.Shutdown(ctx)
+		profileManager.Shutdown(ctx)
 
 	},
 }

@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
+	"github.com/tupyy/device-worker-ng/internal/profile"
 	"github.com/tupyy/device-worker-ng/internal/scheduler/common"
 	"github.com/tupyy/device-worker-ng/internal/scheduler/reconcile"
-	"github.com/tupyy/device-worker-ng/internal/state"
 	"go.uber.org/zap"
 )
 
@@ -27,7 +27,7 @@ type Scheduler struct {
 	// reconciler
 	reconciler common.Reconciler
 	// profileEvaluationResults holds the latest profile evaluation results received from profile manager
-	profileEvaluationResults []state.ProfileEvaluationResult
+	profileEvaluationResults []profile.ProfileEvaluationResult
 	// futures holds the future for each reconciliation function in progress
 	futures map[string]*entity.Future[entity.Result[entity.JobState]]
 }
@@ -48,11 +48,11 @@ func newScheduler(executor common.Executor, heartbeatPeriod time.Duration) *Sche
 		executor:                 executor,
 		reconciler:               reconcile.New(),
 		futures:                  make(map[string]*entity.Future[entity.Result[entity.JobState]]),
-		profileEvaluationResults: make([]state.ProfileEvaluationResult, 0),
+		profileEvaluationResults: make([]profile.ProfileEvaluationResult, 0),
 	}
 }
 
-func (s *Scheduler) Start(ctx context.Context, input chan entity.Message, profileUpdateCh chan []state.ProfileEvaluationResult) {
+func (s *Scheduler) Start(ctx context.Context, input chan entity.Message, profileUpdateCh chan []profile.ProfileEvaluationResult) {
 	runCtx, cancel := context.WithCancel(ctx)
 	s.runCancel = cancel
 
@@ -86,7 +86,7 @@ func (s *Scheduler) Stop(ctx context.Context) {
 	zap.S().Info("scheduler shutdown")
 }
 
-func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.Workload], profileCh chan []state.ProfileEvaluationResult) {
+func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.Workload], profileCh chan []profile.ProfileEvaluationResult) {
 	sync := make(chan struct{}, 1)
 
 	heartbeat := time.NewTicker(defaultHeartbeatPeriod)
@@ -247,7 +247,7 @@ func (s *Scheduler) HaveToReconcile(j *entity.Job) bool {
 	return false
 }
 
-func (s *Scheduler) evaluate(j *entity.Job, results []state.ProfileEvaluationResult) (bool, error) {
+func (s *Scheduler) evaluate(j *entity.Job, results []profile.ProfileEvaluationResult) (bool, error) {
 	if len(j.Workload().Profiles()) == 0 || len(results) == 0 {
 		return true, nil
 	}

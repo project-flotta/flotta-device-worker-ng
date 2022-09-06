@@ -12,12 +12,19 @@ All these additional tasks could be run like any other workloads.
 
 Last but not least, this implementation *does not* use _yggdrasil_ as broker. It has a simple implementation of _yggdrasil_ API but it is a standalone in this regard.
 
-## TO DO
+## Differences between the official agent and device-worker-ng
 
-- [x] Edge HTTP client (enrolling, registration, heartbeat and configuration)
-- [ ] Generating *Podman* pod specification to be able to run workloads
-- [ ] Execute workloads
-- [ ] Integration tests
+#### Workload Kind
+Currently, the official device-work supports only two types of workloads: pods and ansible. The goal of _device-worker-ng_ is to support more kinds of workloads like:
+`shell` and `microshift`.
+
+
+#### OS monitoring and logging
+*device-worker-ng* does not intend to have any build-in OS monitoring and logging.
+
+
+#### EdgeDevice's profiles
+
 
 ## Prerequisites
 

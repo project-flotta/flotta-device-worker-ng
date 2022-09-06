@@ -1,4 +1,4 @@
-package state
+package profile
 
 import (
 	"github.com/tupyy/device-worker-ng/internal/entity"

@@ -1,4 +1,4 @@
-package state
+package profile
 
 import (
 	"context"
