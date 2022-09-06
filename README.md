@@ -14,16 +14,19 @@ Last but not least, this implementation *does not* use _yggdrasil_ as broker. It
 
 ## Differences between the official agent and device-worker-ng
 
-#### Workload Kind
-Currently, the official device-work supports only two types of workloads: pods and ansible. The goal of _device-worker-ng_ is to support more kinds of workloads like:
-`shell` and `microshift`.
+#### 1. Workload Kind
+Currently, the official `device-worker` supports only two types of workloads: pods and ansible. The goal of `device-worker-ng` is to support more kinds of workloads like: `shell` and `microshift`.
 
 
-#### OS monitoring and logging
-*device-worker-ng* does not intend to have any build-in OS monitoring and logging.
+#### 2. Run workloads as `rootfull` or `rootless`
+Workload CR has a new field `Rootless` which set the type of executor which will be used to run the workload. In case of **podman**, the pods will be either `rootless` or `rootless` based on this field. To be able to run `rootfull` pods, the agent must be run as *root* and to run `rootless` pods the `XDG_RUNTIME_DIR` must be provided in the `config.yaml` file.
 
 
-#### EdgeDevice's profiles
+#### 3. OS monitoring and logging
+`device-worker-ng` does not intend to have any build-in OS monitoring and logging.
+
+
+#### 4. EdgeDevice's profiles
 
 
 ## Prerequisites
@@ -40,6 +43,7 @@ CA_ROOT: /home/cosmin/projects/device-worker-ng/resources/certificates/ca.pem
 CERT: /home/cosmin/projects/device-worker-ng/resources/certificates/cert.pem
 KEY: /home/cosmin/projects/device-worker-ng/resources/certificates/key.pem
 SERVER: https://127.0.0.1:8043
+XDG_RUNTIME_DIR: /run/user/1000
 DEVICE_ID: toto
 ```
 
