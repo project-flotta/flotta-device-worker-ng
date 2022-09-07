@@ -132,6 +132,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					* A resolved future means the reconciliation function returned.
 					* The result could be either a new current state or an error in case that the executor failed to reconcile the job
 					* In both cases, we remove the future. At the next heartbeat, a new reconciliation function will be executed with a new future.
+					* If the future is not resolved, wait until the future is resolved.
 					* */
 					if result, isResolved := future.Poll(); isResolved {
 						if result.Error != nil {
