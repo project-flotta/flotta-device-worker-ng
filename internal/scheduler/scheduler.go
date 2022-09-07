@@ -126,6 +126,26 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 			}
 		case <-sync:
 			for _, j := range s.jobs.ToList() {
+				// if there is already a reconciliation function in progress check if the future has been resolved.
+				if future, found := s.futures[j.ID()]; found {
+					/*
+					* A resolved future means the reconciliation function returned.
+					* The result could be either a new current state or an error in case that the executor failed to reconcile the job
+					* In both cases, we remove the future. At the next heartbeat, a new reconciliation function will be executed with a new future.
+					* */
+					if result, isResolved := future.Poll(); isResolved {
+						if result.Error != nil {
+							zap.S().Errorw("failed to reconcile the job", "job_id", j.ID(), "error", result.Error)
+						} else {
+							j.SetCurrentState(result.Value)
+						}
+						delete(s.futures, j.ID())
+					}
+
+					continue
+				}
+
+				// from here on, we start a new reconciliation process for this job.
 				// get the current state first
 				state, err := s.executor.GetState(context.TODO(), j.Workload())
 				if err != nil {
@@ -147,48 +167,29 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					continue
 				}
 
-				// if there is already a reconciliation function started check if the future has been resolved.
-				future, found := s.futures[j.ID()]
-				if !found {
-					/* at this point we need to reconcile. There are couple of things to verify:
-					* - if we need to restart the job, check if we can do that now or wait
-					* - if the job needs to be executed, check if there is a cron attached to it and verify if we can started
-					* Because cron is basically a retry at a certain time in future, a job cannot have *both* a cron and a retry attached.
-					* */
-					if j.ShouldRestart() && j.Retry() != nil {
-						if !j.Retry().CanReconcile() {
-							zap.S().DPanicw("job cannot be reconciled yet", "job_id", j.ID(), "next_retry", j.Retry().Next())
-							continue
-						}
-						j.Retry().ComputeNext()
-					}
-
-					// look at the cron only if we need to run the job.
-					if j.TargetState() == entity.RunningState && j.Cron() != nil {
-						if !j.Cron().CanReconcile() {
-							zap.S().Debugw("job cannot be reconciled yet", "job_id", j.ID(), "next_cron", j.Cron().Next())
-							continue
-						}
-						j.Cron().ComputeNext()
-					}
-					// reconcile
-					future := s.reconciler.Reconcile(context.Background(), j, s.executor)
-					s.futures[j.ID()] = future
-					continue
-				}
-				/*
-				* A resolved future means the reconciliation function returned.
-				* The result could be either a new current state or an error in case that the executor failed to reconcile the job
-				* In both cases, we remove the future. At the next heartbeat, a new reconciliation function will be executed with a new future.
+				/* at this point we need to reconcile. There are couple of things to verify:
+				* - if we need to restart the job, check if we can do that now or wait
+				* - if the job needs to be executed, check if there is a cron attached to it and verify if we can started
+				* Because cron is basically a retry at a certain time in future, a job cannot have *both* a cron and a retry attached.
 				* */
-				if result, isResolved := future.Poll(); isResolved {
-					if result.Error != nil {
-						zap.S().Errorw("failed to reconcile the job", "job_id", j.ID(), "error", result.Error)
-					} else {
-						j.SetCurrentState(result.Value)
+				if j.ShouldRestart() && j.Retry() != nil {
+					if !j.Retry().CanReconcile() {
+						zap.S().DPanicw("job cannot be reconciled yet", "job_id", j.ID(), "next_retry", j.Retry().Next())
+						continue
 					}
-					delete(s.futures, j.ID())
+					j.Retry().ComputeNext()
 				}
+				// look at the cron only if we need to run the job.
+				if j.TargetState() == entity.RunningState && j.Cron() != nil {
+					if !j.Cron().CanReconcile() {
+						zap.S().Debugw("job cannot be reconciled yet", "job_id", j.ID(), "next_cron", j.Cron().Next())
+						continue
+					}
+					j.Cron().ComputeNext()
+				}
+				// reconcile
+				future := s.reconciler.Reconcile(context.Background(), j, s.executor)
+				s.futures[j.ID()] = future
 			}
 		case results := <-profileCh:
 			s.profileEvaluationResults = results
