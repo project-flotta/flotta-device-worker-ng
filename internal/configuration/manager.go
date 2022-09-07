@@ -40,7 +40,7 @@ func New() *Manager {
 		conf:           defaultConfiguration,
 		SchedulerCh:    make(chan entity.Message, 10),
 		StateManagerCh: make(chan entity.Message),
-		hardware:       NewHardwareInfo(nil).GetHardwareInformation(),
+		hardware:       NewHardwareInfo().GetHardwareInformation(),
 	}
 
 	return m

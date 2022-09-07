@@ -34,6 +34,9 @@ type Workload struct {
 	// image registries
 	ImageRegistries *ImageRegistries `json:"imageRegistries,omitempty"`
 
+	// Kind of workload
+	Kind string `json:"kind,omitempty"`
+
 	// Workload labels
 	Labels map[string]string `json:"labels,omitempty"`
 

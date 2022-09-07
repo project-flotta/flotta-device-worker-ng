@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/go-openapi/errors"
+	"github.com/go-openapi/runtime"
 	"github.com/go-openapi/spec"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
@@ -47,7 +48,7 @@ func (t *typeValidator) schemaInfoForType(data interface{}) (string, string) {
 		return stringType, stringFormatDateTime
 	case strfmt.Duration, *strfmt.Duration:
 		return stringType, stringFormatDuration
-	case swag.File, *swag.File:
+	case runtime.File, *runtime.File:
 		return fileType, ""
 	case strfmt.Email, *strfmt.Email:
 		return stringType, stringFormatEmail
@@ -136,7 +137,7 @@ func (t *typeValidator) Applies(source interface{}, kind reflect.Kind) bool {
 func (t *typeValidator) Validate(data interface{}) *Result {
 	result := new(Result)
 	result.Inc()
-	if data == nil {
+	if data == nil || reflect.DeepEqual(reflect.Zero(reflect.TypeOf(data)), reflect.ValueOf(data)) {
 		// nil or zero value for the passed structure require Type: null
 		if len(t.Type) > 0 && !t.Type.Contains(nullType) && !t.Nullable { // TODO: if a property is not required it also passes this
 			return errorHelp.sErr(errors.InvalidType(t.Path, t.In, strings.Join(t.Type, ","), nullType))

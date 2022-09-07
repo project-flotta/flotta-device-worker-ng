@@ -36,13 +36,13 @@ func New(rootless bool) (*PodmanExecutor, error) {
 func (e *PodmanExecutor) Run(ctx context.Context, w entity.Workload) error {
 	workload := w.(entity.PodWorkload)
 
-	pod, err := toPod(workload)
+	pod, err := common.ToPod(workload)
 	if err != nil {
 		zap.S().Errorw("failed to create pod", "error", err)
 		return fmt.Errorf("[%w] [%s] workload_name '%s'", common.ErrDeployingWorkload, err, workload.Name)
 	}
 
-	yaml, err := toPodYaml(pod, workload.Configmaps)
+	yaml, err := common.ToPodYaml(pod, workload.Configmaps)
 	if err != nil {
 		zap.S().Errorw("failed to create pod", "error", err)
 		return fmt.Errorf("[%w] [%s] workload_name '%s'", common.ErrDeployingWorkload, err, workload.Name)
@@ -90,11 +90,11 @@ func (e *PodmanExecutor) Stop(ctx context.Context, id string) error {
 	return nil
 }
 
-func (e *PodmanExecutor) Remove(ctx context.Context, id string) error {
-	err := e.podman.Remove(id)
+func (e *PodmanExecutor) Remove(ctx context.Context, w entity.Workload) error {
+	err := e.podman.Remove(w.ID())
 	if err != nil {
-		zap.S().Errorw("failed to remove pod", "error", err, "pod_id", id)
-		return fmt.Errorf("%w %s pod_id: %s", common.ErrRemoveWorkload, err, id)
+		zap.S().Errorw("failed to remove pod", "error", err, "pod_id", w.ID())
+		return fmt.Errorf("%w %s pod_id: %s", common.ErrRemoveWorkload, err, w.ID())
 	}
 	return nil
 }
@@ -107,13 +107,13 @@ func (e *PodmanExecutor) List(ctx context.Context) ([]common.WorkloadInfo, error
 	return reports, nil
 }
 
-func (e *PodmanExecutor) GetState(ctx context.Context, id string) (entity.JobState, error) {
+func (e *PodmanExecutor) GetState(ctx context.Context, w entity.Workload) (entity.JobState, error) {
 	info, err := e.List(ctx)
 	if err != nil {
 		return entity.UnknownState, err
 	}
 	for _, i := range info {
-		if i.Id == id {
+		if i.Id == w.ID() {
 			return mapPodmanStatusToEntity(i.Status), nil
 		}
 	}

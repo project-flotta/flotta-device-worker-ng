@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
+	"github.com/tupyy/device-worker-ng/internal/executor/k8s"
 	"github.com/tupyy/device-worker-ng/internal/executor/podman"
 	"go.uber.org/zap"
 )
@@ -16,10 +17,10 @@ const (
 
 // executor is defines the interface for all executors: podman, bash, ansible.
 type executor interface {
-	Remove(ctx context.Context, id string) error
+	Remove(ctx context.Context, w entity.Workload) error
 	Run(ctx context.Context, w entity.Workload) error
 	Stop(ctx context.Context, id string) error
-	GetState(ctx context.Context, id string) (entity.JobState, error)
+	GetState(ctx context.Context, w entity.Workload) (entity.JobState, error)
 	Exists(ctx context.Context, id string) (bool, error)
 }
 
@@ -45,11 +46,17 @@ func New() (*Executor, error) {
 		return nil, err
 	}
 	e.rootfullExecutors[entity.PodKind] = rootfullPodman
+	k8sExecutor, err := k8s.New("/home/cosmin/.kube/minikube.yaml")
+	if err != nil {
+		return nil, err
+	}
+	e.rootfullExecutors[entity.K8SKind] = k8sExecutor
+	e.rootlessExecutors[entity.K8SKind] = k8sExecutor
 	return e, nil
 }
 
 func (e *Executor) Run(ctx context.Context, w entity.Workload) error {
-	if w.Kind() != entity.PodKind {
+	if w.Kind() != entity.PodKind && w.Kind() != entity.K8SKind {
 		return errors.New("only pod workloads are supported")
 	}
 	executor, err := e.getExecutor(w)
@@ -61,7 +68,7 @@ func (e *Executor) Run(ctx context.Context, w entity.Workload) error {
 }
 
 func (e *Executor) Stop(ctx context.Context, w entity.Workload) error {
-	if w.Kind() != entity.PodKind {
+	if w.Kind() != entity.PodKind && w.Kind() != entity.K8SKind {
 		zap.S().Errorw("workload type unsupported %s", w.Kind())
 		return errors.New("only pod workloads are supported")
 	}
@@ -81,7 +88,7 @@ func (e *Executor) Stop(ctx context.Context, w entity.Workload) error {
 }
 
 func (e *Executor) GetState(ctx context.Context, w entity.Workload) (entity.JobState, error) {
-	if w.Kind() != entity.PodKind {
+	if w.Kind() != entity.PodKind && w.Kind() != entity.K8SKind {
 		zap.S().Errorw("workload type unsupported %s", w.Kind())
 		return entity.UnknownState, errors.New("only pod workloads are supported")
 	}
@@ -90,7 +97,7 @@ func (e *Executor) GetState(ctx context.Context, w entity.Workload) (entity.JobS
 	if err != nil {
 		return entity.UnknownState, err
 	}
-	state, err := executor.GetState(ctx, w.ID())
+	state, err := executor.GetState(ctx, w)
 	if err != nil {
 		zap.S().Errorw("failed to get workload status", "error", err)
 		return entity.UnknownState, err
@@ -99,7 +106,7 @@ func (e *Executor) GetState(ctx context.Context, w entity.Workload) (entity.JobS
 }
 
 func (e *Executor) Remove(ctx context.Context, w entity.Workload) error {
-	if w.Kind() != entity.PodKind {
+	if w.Kind() != entity.PodKind && w.Kind() != entity.K8SKind {
 		zap.S().Errorw("workload type unsupported %s", w.Kind())
 		return errors.New("only pod workloads are supported")
 	}
@@ -108,7 +115,7 @@ func (e *Executor) Remove(ctx context.Context, w entity.Workload) error {
 	if err != nil {
 		return err
 	}
-	err = executor.Remove(ctx, w.ID())
+	err = executor.Remove(ctx, w)
 	if err != nil {
 		zap.S().Errorw("failed to get remove workload", "error", err)
 		return err
@@ -117,7 +124,7 @@ func (e *Executor) Remove(ctx context.Context, w entity.Workload) error {
 }
 
 func (e *Executor) Exists(ctx context.Context, w entity.Workload) (bool, error) {
-	if w.Kind() != entity.PodKind {
+	if w.Kind() != entity.PodKind && w.Kind() != entity.K8SKind {
 		zap.S().Errorw("workload type unsupported %s", w.Kind())
 		return false, errors.New("only pod workloads are supported")
 	}

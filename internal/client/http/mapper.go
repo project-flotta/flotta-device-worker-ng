@@ -208,9 +208,17 @@ func configurationModel2Entity(m models.DeviceConfigurationMessage) entity.Devic
 
 	workloads := make([]entity.Workload, 0, len(m.Workloads))
 	for _, w := range m.Workloads {
+		var k entity.WorkloadKind
+		switch w.Kind {
+		case "k8s":
+			k = entity.K8SKind
+		default:
+			k = entity.PodKind
+		}
 		podWorkload := entity.PodWorkload{
 			Name:          w.Name,
 			Namespace:     w.Namespace,
+			WKind:         k,
 			Annotations:   w.Annotations,
 			Configmaps:    w.Configmaps,
 			Labels:        w.Labels,

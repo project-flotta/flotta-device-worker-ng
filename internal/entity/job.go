@@ -79,7 +79,7 @@ func (j *Job) SetCurrentState(currentState JobState) {
 	j.currentState = currentState
 }
 
-func (j *Job) NeedToRestarted() bool {
+func (j *Job) ShouldRestart() bool {
 	return j.CurrentState().OneOf(ExitedState, UnknownState) && j.TargetState() == RunningState
 }
 

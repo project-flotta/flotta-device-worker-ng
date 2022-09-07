@@ -13,6 +13,7 @@ type WorkloadKind string
 const (
 	PodKind     WorkloadKind = "pod"
 	AnsibleKind WorkloadKind = "ansible"
+	K8SKind     WorkloadKind = "k8s"
 )
 
 type Workload interface {
@@ -28,6 +29,8 @@ type Workload interface {
 // PodWorkload represents the workload in form of a pod.
 type PodWorkload struct {
 	Name string
+
+	WKind WorkloadKind
 
 	// Namespace of the workload
 	Namespace string
@@ -64,7 +67,7 @@ func (p PodWorkload) ID() string {
 }
 
 func (p PodWorkload) Kind() WorkloadKind {
-	return PodKind
+	return p.WKind
 }
 
 func (p PodWorkload) Profiles() []WorkloadProfile {

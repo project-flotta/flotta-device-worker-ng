@@ -22,6 +22,7 @@ func New() *reconciler {
 	}
 	logger := &logger{}
 	r.syncFuncs[entity.PodKind] = logger.wrap(createPodmanSyncFunc())
+	r.syncFuncs[entity.K8SKind] = createK8SSyncFunc()
 	return r
 }
 
@@ -32,14 +33,12 @@ func (r *reconciler) Reconcile(ctx context.Context, job *entity.Job, ex common.E
 	}
 
 	ch := make(chan entity.Result[entity.JobState])
-	go futureWrapper(ch, func() (entity.JobState, error) {
-		return fn(ctx, job, ex)
-	})
+	go futureWrapper(ctx, ch, job, ex, fn)
 	return entity.NewFuture(ch)
 }
 
-func futureWrapper(ch chan entity.Result[entity.JobState], fn func() (entity.JobState, error)) {
-	state, err := fn()
+func futureWrapper(ctx context.Context, ch chan entity.Result[entity.JobState], job *entity.Job, ex common.Executor, fn syncFunc) {
+	state, err := fn(ctx, job, ex)
 	ch <- entity.Result[entity.JobState]{
 		Value: state,
 		Error: err,
@@ -92,5 +91,33 @@ func createPodmanSyncFunc() syncFunc {
 		}
 
 		return j.CurrentState(), nil
+	}
+}
+
+func createK8SSyncFunc() syncFunc {
+	return func(ctx context.Context, j *entity.Job, executor common.Executor) (state entity.JobState, err error) {
+		if j.CurrentState() == j.TargetState() {
+			return j.CurrentState(), nil
+		}
+
+		if j.TargetState() == entity.RunningState {
+			zap.S().Infow("create deployment", "job_id", j.ID())
+			if err := executor.Run(ctx, j.Workload()); err != nil {
+				return entity.UnknownState, err
+			}
+		}
+
+		if j.TargetState().OneOf(entity.ExitedState, entity.InactiveState, entity.UnknownState) {
+			zap.S().Infow("remove deployment from k8s", "job_id", j.ID())
+			if err := executor.Remove(ctx, j.Workload()); err != nil {
+				return entity.UnknownState, err
+			}
+		}
+		<-time.After(1 * time.Second)
+		state, err = executor.GetState(ctx, j.Workload())
+		if err != nil {
+			return entity.UnknownState, err
+		}
+		return state, nil
 	}
 }

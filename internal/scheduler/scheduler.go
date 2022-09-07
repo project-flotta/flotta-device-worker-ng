@@ -143,7 +143,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					continue
 				}
 
-				if !s.HaveToReconcile(j) {
+				if !s.shouldReconcile(j) {
 					continue
 				}
 
@@ -155,7 +155,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					* - if the job needs to be executed, check if there is a cron attached to it and verify if we can started
 					* Because cron is basically a retry at a certain time in future, a job cannot have *both* a cron and a retry attached.
 					* */
-					if j.NeedToRestarted() && j.Retry() != nil {
+					if j.ShouldRestart() && j.Retry() != nil {
 						if !j.Retry().CanReconcile() {
 							zap.S().DPanicw("job cannot be reconciled yet", "job_id", j.ID(), "next_retry", j.Retry().Next())
 							continue
@@ -231,11 +231,11 @@ func (s *Scheduler) createJob(w entity.Workload) (*entity.Job, error) {
 	return builder.Build()
 }
 
-// HaveToReconcile returns true if a job needs to be reconciled.
+// shouldReconcile returns true if a job needs to be reconciled.
 // The conditions for a job to be reconciled are:
 //  - the job is idle, either stopped or never run, and the target_state is RunningState
-//  - the job is running and needs to be stopped
-func (s *Scheduler) HaveToReconcile(j *entity.Job) bool {
+//  - the job is running and needs to be stopped (i.e target_state one of UnknownState, InactiveState, ExitedState)
+func (s *Scheduler) shouldReconcile(j *entity.Job) bool {
 	if j.TargetState() == entity.RunningState && j.CurrentState().OneOf(entity.ReadyState, entity.InactiveState, entity.ExitedState, entity.UnknownState) {
 		return true
 	}
