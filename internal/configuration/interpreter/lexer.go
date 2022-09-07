@@ -38,6 +38,11 @@ func (l *lexer) Scan() (int, Token, string) {
 			l.next()
 		}
 		name := string(l.src[start : l.offset-1])
+		if name == "nil" {
+			tok := NIL
+			val = name
+			return pos, tok, val
+		}
 		tok := STRING
 		val = name
 

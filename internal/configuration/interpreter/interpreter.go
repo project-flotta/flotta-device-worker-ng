@@ -40,7 +40,11 @@ func New(expression string) (*Interpreter, error) {
 func (i *Interpreter) Evaluate(variables map[string]interface{}) (result bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = r.(*EvaluationError)
+			var ok bool
+			err, ok = r.(*EvaluationError)
+			if !ok {
+				fmt.Println("not evaluation error")
+			}
 		}
 	}()
 

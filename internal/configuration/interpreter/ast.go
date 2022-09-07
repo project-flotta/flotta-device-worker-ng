@@ -31,8 +31,22 @@ func (a *AST) visitComprExpr(e *CompExpr) value {
 	valueLeft := e.Left.Accept(a)
 	valueRight := e.Right.Accept(a)
 
-	if valueLeft.typ != valueRight.typ {
-		panic(newEvaluationError(e, "type mismatch between left and right expression"))
+	if valueRight.typ == typeNull {
+		switch e.Op {
+		case EQUALS:
+			return boolean(valueLeft.typ == typeNull)
+		case NOT_EQUALS:
+			return boolean(valueLeft.typ != typeNull)
+		default:
+			panic(newEvaluationError(e, "operator '%s' not supported on nil", e.Op))
+		}
+
+	}
+
+	// at this point, we expect to find each expression with values.
+	// So, valueLeft need to be different than nil
+	if valueLeft.typ == typeNull {
+		panic(newEvaluationError(e, "cannot evaluate expression. missing left value"))
 	}
 
 	switch e.Op {
@@ -57,6 +71,10 @@ func (a *AST) visitNumExpr(e *NumExpr) value {
 	return num(e.Value)
 }
 
+func (a *AST) visitNilExpr(e *NilExpr) value {
+	return null()
+}
+
 func (a *AST) visitValueExpr(e *ValueExpr) value {
 	numExpr := e.Left.(*NumExpr)
 	return num(numExpr.Value)
@@ -70,7 +88,7 @@ func (a *AST) visitUnaryExpr(e *UnaryExpr) value {
 func (a *AST) visitLiteralExpr(e *LiteralExpr) value {
 	v, ok := a.variables[e.Name]
 	if !ok {
-		panic(newEvaluationError(e, "cannot find variable %s", e.Name))
+		return null()
 	}
 
 	// check the type of the variable

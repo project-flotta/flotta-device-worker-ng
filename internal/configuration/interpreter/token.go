@@ -26,6 +26,7 @@ const (
 	// literals
 	STRING
 	NUMBER
+	NIL
 )
 
 var tokenNames = map[Token]string{
@@ -46,6 +47,7 @@ var tokenNames = map[Token]string{
 	OR:         "||",
 	STRING:     "string",
 	NUMBER:     "number",
+	NIL:        "nil",
 }
 
 func (t Token) String() string {

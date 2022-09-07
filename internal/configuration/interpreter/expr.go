@@ -24,6 +24,16 @@ func (l *LiteralExpr) Accept(a *AST) value {
 	return a.visitLiteralExpr(l)
 }
 
+type NilExpr struct{}
+
+func (n *NilExpr) String() string {
+	return "nil"
+}
+
+func (n *NilExpr) Accept(a *AST) value {
+	return a.visitNilExpr(n)
+}
+
 // NumExpr is an expression like 1234.
 type NumExpr struct {
 	Value float32

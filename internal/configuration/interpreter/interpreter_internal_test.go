@@ -96,7 +96,7 @@ func TestInterpreter(t *testing.T) {
 			variables: map[string]interface{}{
 				"x": 0,
 			},
-			hasError: false,
+			hasError: true,
 		},
 		{
 			test:     "x >= 1 && y == 2",
@@ -165,6 +165,53 @@ func TestInterpreter(t *testing.T) {
 				"w": 1,
 			},
 			hasError: false,
+		},
+		{
+			test:      "z == nil",
+			expected:  true,
+			variables: map[string]interface{}{},
+			hasError:  false,
+		},
+		{
+			test:     "z != nil",
+			expected: true,
+			variables: map[string]interface{}{
+				"z": 1,
+			},
+			hasError: false,
+		},
+		{
+			test:     "z != nil && x == 2",
+			expected: true,
+			variables: map[string]interface{}{
+				"z": 1,
+				"x": 2,
+			},
+			hasError: false,
+		},
+		{
+			test:     "z == nil && x == 2",
+			expected: true,
+			variables: map[string]interface{}{
+				"x": 2,
+			},
+			hasError: false,
+		},
+		{
+			test:     "z == 2 && x == 2",
+			expected: false,
+			variables: map[string]interface{}{
+				"x": 2,
+			},
+			hasError: true,
+		},
+		{
+			test:     "z > nil",
+			expected: false,
+			variables: map[string]interface{}{
+				"z": 1,
+			},
+			hasError: true,
 		},
 	}
 

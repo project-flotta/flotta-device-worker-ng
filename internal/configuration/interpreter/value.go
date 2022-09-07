@@ -24,3 +24,7 @@ func num(n float32) value {
 func boolean(b bool) value {
 	return value{typ: typeBool, b: b}
 }
+
+func null() value {
+	return value{typ: typeNull}
+}

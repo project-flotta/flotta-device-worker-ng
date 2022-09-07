@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func testParser(t *testing.T) {
+func TestParser(t *testing.T) {
 	exprs := []struct {
 		test     string
 		expected string
@@ -102,6 +102,11 @@ func testParser(t *testing.T) {
 		{
 			test:     "2 > 2",
 			expected: "( 2 > 2 )",
+			hasError: false,
+		},
+		{
+			test:     "x != nil",
+			expected: "( x != nil )",
 			hasError: false,
 		},
 	}

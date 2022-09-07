@@ -7,7 +7,7 @@
 //                                                                              ; we don't accept expression like x > 2 == y > 2 == z > 3. There are not useful for our usecase.
 // value:           unary | unary primary                                       ; used as value + unit of measure like: 2.2Gib
 // unary:           ( "-" ) primary	| primary; could be 2, 2.2, -2.2
-// primary:         STRING | NUMBER | "( expression )"                          ; cpu123, cpu_123
+// primary:         STRING | NUMBER | NIL | "( expression )"                    ; cpu123, cpu_123
 
 package interpreter
 
@@ -135,7 +135,7 @@ func (p *parser) unary() Expr {
 		return expr
 	}
 
-	p.expect(NUMBER)
+	p.expect(NUMBER, NIL)
 
 	return p.primary()
 }
@@ -146,6 +146,9 @@ func (p *parser) primary() Expr {
 		val := p.val
 		p.next()
 		return &LiteralExpr{val}
+	case NIL:
+		p.next()
+		return &NilExpr{}
 	case NUMBER:
 		value, err := strconv.ParseFloat(p.val, 32)
 		if err != nil {
@@ -187,8 +190,15 @@ func (p *parser) check(tok Token) bool {
 }
 
 // Ensure current token is tok, and parse next token into p.tok.
-func (p *parser) expect(tok Token) {
-	if p.tok != tok {
+func (p *parser) expect(tok ...Token) {
+	found := false
+	for _, t := range tok {
+		if p.tok == t {
+			found = true
+			break
+		}
+	}
+	if !found {
 		panic(p.errorf("expected %s instead of %s", tok, p.tok))
 	}
 }

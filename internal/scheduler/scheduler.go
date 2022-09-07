@@ -205,10 +205,10 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				}
 				switch result {
 				case true:
-					zap.S().Infow("job's profiles evaluated to true", "job_id", j.ID())
+					zap.S().Infow("job's profiles evaluated to true", "job_id", j.ID(), "job_profiles", j.Workload().Profiles(), "profile_evaluation_result", results)
 					j.SetTargetState(entity.RunningState)
 				case false:
-					zap.S().Infow("job's profiles evaluated to false", "job_id", j.ID())
+					zap.S().Infow("job's profiles evaluated to false", "job_id", j.ID(), "job_profiles", j.Workload().Profiles(), "profile_evaluation_result", results)
 					j.SetTargetState(entity.InactiveState)
 				}
 			}
