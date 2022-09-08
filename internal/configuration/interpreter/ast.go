@@ -46,7 +46,7 @@ func (a *AST) visitComprExpr(e *CompExpr) value {
 	// at this point, we expect to find each expression with values.
 	// So, valueLeft need to be different than nil
 	if valueLeft.typ == typeNull {
-		panic(newEvaluationError(e, "cannot evaluate expression. missing left value"))
+		return boolean(false)
 	}
 
 	switch e.Op {
