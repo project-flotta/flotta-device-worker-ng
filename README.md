@@ -15,7 +15,8 @@ Last but not least, this implementation *does not* use _yggdrasil_ as broker. It
 ## Differences between the official agent and device-worker-ng
 
 #### 1. Workload Kind
-Currently, the official `device-worker` supports only two types of workloads: pods and ansible. The goal of `device-worker-ng` is to support more kinds of workloads like: `shell` and `microshift`.
+Currently, the official `device-worker` supports only two types of workloads: pods and ansible. 
+The `device-worker-ng` supports `pod` and, in addition to `device-worker`, has a support for `k8s` workloads.
 
 
 #### 2. Run workloads as `rootfull` or `rootless`
@@ -27,7 +28,57 @@ Workload CR has a new field `Rootless` which set the type of executor which will
 
 
 #### 4. EdgeDevice's profiles
-
+Profiles are a new feature of `device-worker-ns`. The idea behind it is to allow workloads to run only when certains profiles are active.
+Each profile has a set of conditions which, basically, are boolean expression like: `cpu > 23%` or `cpu < 5% || cpu > 40%`. 
+The value for variables can be sent to the device though a POST request like:
+```
+curl -X -H "Content-Type: application/json" -v -d '{"value":20,"name":"cpu"}' http://localhost:8080/metrics
+```
+The endpoint is hard coded to `http://localhost:8080/metrics`.
+After each `POST`, the scheduler will evaluate each condition for each profile and determinate which if the job will run or not.
+An `EdgeDevice` CR with profiles can look like this:
+```yaml
+apiVersion: management.project-flotta.io/v1alpha1
+kind: EdgeDevice
+metadata:
+  labels:
+    app: camera
+    name: toto
+    namespace: default
+spec:
+  heartbeat:
+    periodSeconds: 2
+    profiles:
+      - name: test
+        conditions:
+          - name: "off"
+            expression: "x<3% || x == nil"
+          - name: "another_one"
+            expression: "y>3"
+```
+This CR defines one profile named `test` whith two conditions `off` and `another_one`. 
+To enable profiles for a workload, we need to set this profile in the CR of the workload:
+```yaml
+apiVersion: management.project-flotta.io/v1alpha1
+kind: EdgeWorkload
+metadata:
+  name: nginx-rootfull
+spec:
+  deviceSelector:
+    matchLabels:
+      app: camera
+    profiles:
+    	- name: "test"
+        conditions:
+          - "off"
+  type: k8s
+  pod:
+    spec:
+      containers:
+        - name: nginx1
+          image: quay.io/project-flotta/nginx:1.21.6
+```
+For this workload, we add only one condition `off` so, if that condition is `true`, the executor will run the workload.
 
 ## Prerequisites
 
