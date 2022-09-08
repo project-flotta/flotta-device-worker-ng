@@ -87,6 +87,7 @@ func (p PodWorkload) Hash() string {
 
 	fmt.Fprintf(&sb, "%s", p.Name)
 	fmt.Fprintf(&sb, "%s", p.Namespace)
+	fmt.Fprintf(&sb, "%s", p.Kind())
 	for k, v := range p.Annotations {
 		fmt.Fprintf(&sb, "%s%s", k, v)
 	}
