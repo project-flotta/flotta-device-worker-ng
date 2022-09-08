@@ -286,5 +286,5 @@ func (s *Scheduler) evaluate(j *entity.Job, results []profile.ProfileEvaluationR
 	// if at least one condition for each job's profile is true the sum
 	// must be equal to number of profiles
 	// in this case we consider that the job passed the evaluation
-	return sum == len(j.Workload().Profiles()), nil
+	return sum >= len(j.Workload().Profiles()), nil
 }
