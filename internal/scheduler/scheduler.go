@@ -140,6 +140,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 						} else {
 							j.SetCurrentState(result.Value)
 						}
+						future.CancelFunc()
 						delete(s.futures, j.ID())
 					}
 
@@ -189,7 +190,9 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					j.Cron().ComputeNext()
 				}
 				// reconcile
-				future := s.reconciler.Reconcile(context.Background(), j, s.executor)
+				reconcileCtx, cancel := context.WithCancel(ctx)
+				future := s.reconciler.Reconcile(reconcileCtx, j, s.executor)
+				future.CancelFunc = cancel
 				s.futures[j.ID()] = future
 			}
 		case results := <-profileCh:

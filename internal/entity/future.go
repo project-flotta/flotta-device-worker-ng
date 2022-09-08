@@ -1,9 +1,12 @@
 package entity
 
+import "context"
+
 type Future[T any] struct {
 	input       chan T
 	inputClosed bool
 	value       T
+	CancelFunc  context.CancelFunc
 }
 
 func (f *Future[T]) Resolved() bool {
