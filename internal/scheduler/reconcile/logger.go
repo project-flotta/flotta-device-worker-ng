@@ -21,7 +21,7 @@ func (l *logger) sync(ctx context.Context, j *entity.Job, executor common.Execut
 	oldState := j.CurrentState()
 	state, err := l.nextSyncFunc(ctx, j, executor)
 	if oldState != state {
-		zap.S().Infof("job_id '%s' changed state from '%s' to '%s'", j.ID(), oldState.String(), j.CurrentState())
+		zap.S().Infof("job_id '%s' changed state from '%s' to '%s'", j.ID(), oldState.String(), state)
 	}
 	return state, err
 }

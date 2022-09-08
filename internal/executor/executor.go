@@ -2,17 +2,13 @@ package executor
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
+	config "github.com/tupyy/device-worker-ng/configuration"
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"github.com/tupyy/device-worker-ng/internal/executor/k8s"
 	"github.com/tupyy/device-worker-ng/internal/executor/podman"
 	"go.uber.org/zap"
-)
-
-const (
-	rootless = true
-	rootfull = false
 )
 
 // executor is defines the interface for all executors: podman, bash, ansible.
@@ -24,41 +20,28 @@ type executor interface {
 	Exists(ctx context.Context, id string) (bool, error)
 }
 
+type executorItem[T any] struct {
+	Name     string
+	Rootless bool
+	Kind     entity.WorkloadKind
+	Value    T
+}
+
 type Executor struct {
-	rootlessExecutors map[entity.WorkloadKind]executor
-	rootfullExecutors map[entity.WorkloadKind]executor
-	ids               map[string]string
+	executors []executorItem[executor]
+	ids       map[string]string
 }
 
 func New() (*Executor, error) {
 	e := &Executor{
-		rootlessExecutors: make(map[entity.WorkloadKind]executor),
-		rootfullExecutors: make(map[entity.WorkloadKind]executor),
-		ids:               make(map[string]string),
+		executors: make([]executorItem[executor], 0),
+		ids:       make(map[string]string),
 	}
-	rootlessPodman, err := podman.New(rootless)
-	if err != nil {
-		return nil, err
-	}
-	e.rootlessExecutors[entity.PodKind] = rootlessPodman
-	rootfullPodman, err := podman.New(rootfull)
-	if err != nil {
-		return nil, err
-	}
-	e.rootfullExecutors[entity.PodKind] = rootfullPodman
-	k8sExecutor, err := k8s.New("/home/cosmin/.kube/minikube.yaml")
-	if err != nil {
-		return nil, err
-	}
-	e.rootfullExecutors[entity.K8SKind] = k8sExecutor
-	e.rootlessExecutors[entity.K8SKind] = k8sExecutor
+	e.createExecutors()
 	return e, nil
 }
 
 func (e *Executor) Run(ctx context.Context, w entity.Workload) error {
-	if w.Kind() != entity.PodKind && w.Kind() != entity.K8SKind {
-		return errors.New("only pod workloads are supported")
-	}
 	executor, err := e.getExecutor(w)
 	if err != nil {
 		return err
@@ -68,11 +51,6 @@ func (e *Executor) Run(ctx context.Context, w entity.Workload) error {
 }
 
 func (e *Executor) Stop(ctx context.Context, w entity.Workload) error {
-	if w.Kind() != entity.PodKind && w.Kind() != entity.K8SKind {
-		zap.S().Errorw("workload type unsupported %s", w.Kind())
-		return errors.New("only pod workloads are supported")
-	}
-
 	executor, err := e.getExecutor(w)
 	if err != nil {
 		return err
@@ -88,11 +66,6 @@ func (e *Executor) Stop(ctx context.Context, w entity.Workload) error {
 }
 
 func (e *Executor) GetState(ctx context.Context, w entity.Workload) (entity.JobState, error) {
-	if w.Kind() != entity.PodKind && w.Kind() != entity.K8SKind {
-		zap.S().Errorw("workload type unsupported %s", w.Kind())
-		return entity.UnknownState, errors.New("only pod workloads are supported")
-	}
-
 	executor, err := e.getExecutor(w)
 	if err != nil {
 		return entity.UnknownState, err
@@ -106,11 +79,6 @@ func (e *Executor) GetState(ctx context.Context, w entity.Workload) (entity.JobS
 }
 
 func (e *Executor) Remove(ctx context.Context, w entity.Workload) error {
-	if w.Kind() != entity.PodKind && w.Kind() != entity.K8SKind {
-		zap.S().Errorw("workload type unsupported %s", w.Kind())
-		return errors.New("only pod workloads are supported")
-	}
-
 	executor, err := e.getExecutor(w)
 	if err != nil {
 		return err
@@ -124,11 +92,6 @@ func (e *Executor) Remove(ctx context.Context, w entity.Workload) error {
 }
 
 func (e *Executor) Exists(ctx context.Context, w entity.Workload) (bool, error) {
-	if w.Kind() != entity.PodKind && w.Kind() != entity.K8SKind {
-		zap.S().Errorw("workload type unsupported %s", w.Kind())
-		return false, errors.New("only pod workloads are supported")
-	}
-
 	executor, err := e.getExecutor(w)
 	if err != nil {
 		return false, err
@@ -142,16 +105,71 @@ func (e *Executor) Exists(ctx context.Context, w entity.Workload) (bool, error) 
 }
 
 func (e *Executor) getExecutor(w entity.Workload) (executor, error) {
-	if w.IsRootless() {
-		ex, found := e.rootlessExecutors[w.Kind()]
-		if !found {
-			return nil, errors.New("rootless executor not found for this kind of job")
+	fn := func(ex []executorItem[executor], kind entity.WorkloadKind, rootless bool) (executor, bool) {
+		for _, item := range ex {
+			if item.Kind == kind && item.Rootless == rootless {
+				return item.Value, true
+			}
 		}
-		return ex, nil
+		return nil, false
 	}
-	ex, found := e.rootfullExecutors[w.Kind()]
+
+	if w.Kind() == entity.PodKind {
+		i, found := fn(e.executors, w.Kind(), w.IsRootless())
+		if !found {
+			return nil, fmt.Errorf("podman executor not found for workload '%s'", w.ID())
+		}
+		return i, nil
+	}
+
+	// for k8s there is no such rootless or rootfull executor. just rootfull
+	k8sEx, found := fn(e.executors, w.Kind(), false)
 	if !found {
-		return nil, errors.New("rootfull executor not found for this kind of job")
+		return nil, fmt.Errorf("k8s executor not found for workload '%s'", w.ID())
 	}
-	return ex, nil
+	return k8sEx, nil
+}
+
+func (e *Executor) createExecutors() {
+	rootlessSocketPath := config.GetXDGRuntimeDir()
+	if rootlessSocketPath != "" {
+		rootlessPodman, err := podman.New(rootlessSocketPath)
+		if err != nil {
+			zap.S().Errorw("failed to create podman rootless executor", "error", err)
+		}
+		e.executors = append(e.executors, executorItem[executor]{
+			Name:     "podman",
+			Rootless: true,
+			Kind:     entity.PodKind,
+			Value:    rootlessPodman,
+		})
+		zap.S().Info("podman rootless executor created")
+
+	}
+	rootfullPodman, err := podman.New("/run")
+	if err != nil {
+		zap.S().Errorw("failed to create podman rootfull executor", "error", err)
+	}
+	e.executors = append(e.executors, executorItem[executor]{
+		Name:     "podman",
+		Rootless: false,
+		Kind:     entity.PodKind,
+		Value:    rootfullPodman,
+	})
+	zap.S().Info("podman rootfull executor created")
+
+	kubeconfig := config.GetKubeConfig()
+	if kubeconfig != "" {
+		k8sExecutor, err := k8s.New(kubeconfig)
+		if err != nil {
+			zap.S().Errorw("failed to create k8s executor", "error", err)
+		}
+		e.executors = append(e.executors, executorItem[executor]{
+			Name:     "k8s",
+			Rootless: false,
+			Kind:     entity.K8SKind,
+			Value:    k8sExecutor,
+		})
+		zap.S().Info("k8s executor created")
+	}
 }

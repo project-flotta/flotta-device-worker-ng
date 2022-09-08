@@ -24,6 +24,7 @@ const (
 	namespace       = "NAMESPACE"
 	deviceID        = "DEVICE_ID"
 	xdg_runtime_dir = "XDG_RUNTIME_DIR"
+	kubeConfig      = "KUBECONFIG"
 
 	gracefulShutdown        = "GRACEFUL_SHUTDOWN"
 	defaultGracefulShutdown = 5 * time.Second
@@ -156,4 +157,8 @@ func GetXDGRuntimeDir() string {
 		return v.GetString(xdg_runtime_dir)
 	}
 	return os.Getenv("XDG_RUNTIME_DIR")
+}
+
+func GetKubeConfig() string {
+	return v.GetString(kubeConfig)
 }

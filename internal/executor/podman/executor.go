@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	config "github.com/tupyy/device-worker-ng/configuration"
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"github.com/tupyy/device-worker-ng/internal/executor/common"
 	"go.uber.org/zap"
@@ -16,14 +15,8 @@ type PodmanExecutor struct {
 	ids    map[string]string
 }
 
-func New(rootless bool) (*PodmanExecutor, error) {
-	var socket string
-	if rootless {
-		socket = config.GetXDGRuntimeDir()
-	} else {
-		socket = "/run"
-	}
-	podman, err := NewPodman(socket)
+func New(socketPath string) (*PodmanExecutor, error) {
+	podman, err := NewPodman(socketPath)
 	if err != nil {
 		return nil, err
 	}
