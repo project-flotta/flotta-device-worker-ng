@@ -85,6 +85,15 @@ For this workload, we add only one condition `off` so, if that condition is `tru
 You must have flotta operator and API server running and client certificates already generated.
 For more information, please read the [documentation](https://project-flotta.io/documentation/latest/intro/overview.html).
 
+## Build
+> You need go1.18 installed to be able to build the project.
+
+Build:
+```shell
+make vendor
+make build
+```
+
 ## Usage
 
 Create a configuration yaml like:
@@ -104,6 +113,7 @@ Run the device-worker:
 ```
 device-worker-ng --config config.yaml 
 ```
+> If you want to execute workloads on `rootfull podman`, you will need to run the `device-worker-ng` as root.
 
 If you prefer, you can use environment variable with the prefix `EDGE_DEVICE`:
 ```
