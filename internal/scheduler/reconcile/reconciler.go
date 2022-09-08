@@ -13,7 +13,6 @@ type syncFunc func(ctx context.Context, job *entity.Job, executor common.Executo
 
 type reconciler struct {
 	syncFuncs map[entity.WorkloadKind]syncFunc
-	futureCh  map[string]chan entity.Result[entity.JobState]
 }
 
 func New() *reconciler {
