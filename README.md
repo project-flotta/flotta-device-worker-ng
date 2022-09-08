@@ -16,7 +16,8 @@ Last but not least, this implementation *does not* use _yggdrasil_ as broker. It
 
 #### 1. Workload Kind
 Currently, the official `device-worker` supports only two types of workloads: pods and ansible. 
-The `device-worker-ng` supports `pod` and, in addition to `device-worker`, has a support for `k8s` workloads.
+
+The `device-worker-ng` supports `pod` and, in addition to `device-worker`, supports the `k8s` workloads.
 
 
 #### 2. Run workloads as `rootfull` or `rootless`
