@@ -176,7 +176,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				* */
 				if j.ShouldRestart() && j.Retry() != nil {
 					if !j.Retry().CanReconcile() {
-						zap.S().DPanicw("job cannot be reconciled yet", "job_id", j.ID(), "next_retry", j.Retry().Next())
+						zap.S().Debugw("job cannot be reconciled yet", "job_id", j.ID(), "next_retry", j.Retry().Next())
 						continue
 					}
 					j.Retry().ComputeNext()

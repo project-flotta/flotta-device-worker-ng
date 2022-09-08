@@ -19,8 +19,7 @@ func New() *reconciler {
 	r := &reconciler{
 		syncFuncs: make(map[entity.WorkloadKind]syncFunc),
 	}
-	logger := &logger{}
-	r.syncFuncs[entity.PodKind] = logger.wrap(createPodmanSyncFunc())
+	r.syncFuncs[entity.PodKind] = createPodmanSyncFunc()
 	r.syncFuncs[entity.K8SKind] = createK8SSyncFunc()
 	return r
 }
@@ -46,7 +45,7 @@ func futureWrapper(ctx context.Context, ch chan entity.Result[entity.JobState], 
 }
 
 func createPodmanSyncFunc() syncFunc {
-	return func(ctx context.Context, j *entity.Job, executor common.Executor) (state entity.JobState, err error) {
+	fn := func(ctx context.Context, j *entity.Job, executor common.Executor) (state entity.JobState, err error) {
 		if j.CurrentState() == j.TargetState() {
 			return j.CurrentState(), nil
 		}
@@ -91,10 +90,12 @@ func createPodmanSyncFunc() syncFunc {
 
 		return j.CurrentState(), nil
 	}
+	logger := &logger{}
+	return logger.wrap(fn)
 }
 
 func createK8SSyncFunc() syncFunc {
-	return func(ctx context.Context, j *entity.Job, executor common.Executor) (state entity.JobState, err error) {
+	fn := func(ctx context.Context, j *entity.Job, executor common.Executor) (state entity.JobState, err error) {
 		if j.CurrentState() == j.TargetState() {
 			return j.CurrentState(), nil
 		}
@@ -119,4 +120,6 @@ func createK8SSyncFunc() syncFunc {
 		}
 		return state, nil
 	}
+	logger := &logger{}
+	return logger.wrap(fn)
 }
