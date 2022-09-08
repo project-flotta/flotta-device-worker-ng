@@ -26,8 +26,35 @@ Workload CR has a new field `Rootless` which set the type of executor which will
 #### 3. OS monitoring and logging
 `device-worker-ng` does not intend to have any build-in OS monitoring and logging.
 
+#### 4. Cron
+You can define a workload to run as `cron` by adding a field in the CR of the workload:
+```yaml
+apiVersion: management.project-flotta.io/v1alpha1
+kind: EdgeWorkload
+metadata:
+  name: workload2
+spec:
+  deviceSelector:
+    matchLabels:
+      device: toto
+  type: pod
+  cron: *\1 * * * *
+  pod:
+    spec:
+      containers:
+        - name: work
+          image: quay.io/ctupangiu/cron-workload:latest
+```
+> For k8s workloads, the cron will be ignored.
 
-#### 4. EdgeDevice's profiles
+This manifest adds a `cron` definition to the workload making the workload to be executed every minute.
+
+#### 5. Retry
+Because `device-worker-ng` does not rely on `systemd` to restart a failling job, it has its own retry mechanism. It supports `constant` or `exponential` retry intervals. 
+Currently, there is no way to configure the interval though the CR of the workload. The retry is set to `20s` constant interval.
+
+
+#### 6. EdgeDevice's profiles
 Profiles are a new feature of `device-worker-ns`. The idea behind it is to allow workloads to run only when certains profiles are active.
 Each profile has a set of conditions which, basically, are boolean expression like: `cpu > 23%` or `cpu < 5% || cpu > 40%`. 
 The value for variables can be sent to the device though a POST request like:
@@ -84,6 +111,11 @@ For this workload, we add only one condition `off` so, if that condition is `tru
 
 You must have flotta operator and API server running and client certificates already generated.
 For more information, please read the [documentation](https://project-flotta.io/documentation/latest/intro/overview.html).
+
+**Remark:**
+
+To have a support for `profiles`, `retry` and `cron` feature, you may need to use this repo [github.com/tupyy/k4e-operator](github.com/tupyy/k4e-operator) of `flotta-edge-api` and `flotta-controller` because, curently, the official repo does not support those feature:
+
 
 ## Build
 > You need go1.18 installed to be able to build the project.
