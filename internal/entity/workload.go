@@ -63,7 +63,7 @@ type PodWorkload struct {
 }
 
 func (p PodWorkload) ID() string {
-	return p.Hash()
+	return fmt.Sprintf("%s-%s", p.Name, p.Hash()[:12])
 }
 
 func (p PodWorkload) Kind() WorkloadKind {
