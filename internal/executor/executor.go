@@ -131,45 +131,46 @@ func (e *Executor) getExecutor(w entity.Workload) (executor, error) {
 }
 
 func (e *Executor) createExecutors() {
-	rootlessSocketPath := config.GetXDGRuntimeDir()
-	if rootlessSocketPath != "" {
-		rootlessPodman, err := podman.New(rootlessSocketPath)
-		if err != nil {
+	// create rootless podman
+	if config.GetXDGRuntimeDir() != "" {
+		if rootlessPodman, err := podman.New(config.GetXDGRuntimeDir()); err != nil {
 			zap.S().Errorw("failed to create podman rootless executor", "error", err)
+		} else {
+			e.executors = append(e.executors, executorItem[executor]{
+				Name:     "podman",
+				Rootless: true,
+				Kind:     entity.PodKind,
+				Value:    rootlessPodman,
+			})
+			zap.S().Info("podman rootless executor created")
 		}
+	}
+
+	// create rootfull podman
+	if rootfullPodman, err := podman.New("/run"); err != nil {
+		zap.S().Errorw("failed to create podman rootfull executor", "error", err)
+	} else {
 		e.executors = append(e.executors, executorItem[executor]{
 			Name:     "podman",
-			Rootless: true,
-			Kind:     entity.PodKind,
-			Value:    rootlessPodman,
-		})
-		zap.S().Info("podman rootless executor created")
-
-	}
-	rootfullPodman, err := podman.New("/run")
-	if err != nil {
-		zap.S().Errorw("failed to create podman rootfull executor", "error", err)
-	}
-	e.executors = append(e.executors, executorItem[executor]{
-		Name:     "podman",
-		Rootless: false,
-		Kind:     entity.PodKind,
-		Value:    rootfullPodman,
-	})
-	zap.S().Info("podman rootfull executor created")
-
-	kubeconfig := config.GetKubeConfig()
-	if kubeconfig != "" {
-		k8sExecutor, err := k8s.New(kubeconfig)
-		if err != nil {
-			zap.S().Errorw("failed to create k8s executor", "error", err)
-		}
-		e.executors = append(e.executors, executorItem[executor]{
-			Name:     "k8s",
 			Rootless: false,
-			Kind:     entity.K8SKind,
-			Value:    k8sExecutor,
+			Kind:     entity.PodKind,
+			Value:    rootfullPodman,
 		})
-		zap.S().Info("k8s executor created")
+		zap.S().Info("podman rootfull executor created")
+	}
+
+	// create k8s executor
+	if config.GetKubeConfig() != "" {
+		if k8sExecutor, err := k8s.New(config.GetKubeConfig()); err != nil {
+			zap.S().Errorw("failed to create k8s executor", "error", err)
+		} else {
+			e.executors = append(e.executors, executorItem[executor]{
+				Name:     "k8s",
+				Rootless: false,
+				Kind:     entity.K8SKind,
+				Value:    k8sExecutor,
+			})
+			zap.S().Info("k8s executor created")
+		}
 	}
 }
