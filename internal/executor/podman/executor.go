@@ -44,7 +44,7 @@ func (e *PodmanExecutor) Run(ctx context.Context, w entity.Workload) error {
 	zap.S().Debugw("pod spec", "spec", string(yaml))
 
 	// save file
-	tmp, _ := os.CreateTemp("/home/cosmin/tmp", "flotta-")
+	tmp, _ := os.CreateTemp(os.TempDir(), "flotta-")
 	tmp.Write(yaml)
 	tmp.Close()
 
