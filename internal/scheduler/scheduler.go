@@ -233,8 +233,25 @@ func (s *Scheduler) createJob(w entity.Workload) (*entity.Job, error) {
 	if w.Cron() != "" {
 		builder.WithCron(w.Cron())
 	} else {
-		builder.WithConstantRetry(20 * time.Second)
+		builder.WithConstantRetry(10 * time.Second)
 	}
+
+	// add pre-set current state hook to compute next retry
+	// if the job needs to be restarted
+	builder.AddHook(entity.PostSetCurrentState, func(j *entity.Job, s entity.JobState) {
+		if j.ShouldRestart() && j.Retry() != nil {
+			if !j.Retry().MarkedForRestart {
+				j.Retry().ComputeNext()
+				j.Retry().MarkedForRestart = true
+				zap.S().Debugw("marked job for restart", "job_id", j.ID(), "next_restart_after", j.Retry().Next())
+			}
+		}
+		if s == entity.RunningState && j.Retry() != nil {
+			j.Retry().MarkedForRestart = false
+		}
+	}).AddHook(entity.PostSetTargetState, func(j *entity.Job, s entity.JobState) {
+		zap.S().Infow("target state set", "job_id", j.ID(), "target_state", s)
+	})
 
 	return builder.Build()
 }

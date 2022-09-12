@@ -9,6 +9,18 @@ import (
 	"go.uber.org/zap"
 )
 
+type HookType int
+
+const (
+	PreSetCurrentState HookType = iota
+	PostSetCurrentState
+	PreSetTargetState
+	PostSetTargetState
+)
+
+// JobHook is a hook run when either target or current state is changed
+type JobStateHook func(j *Job, s JobState)
+
 type CronJob struct {
 	// next time the job can be reconciled
 	next     time.Time
@@ -57,10 +69,20 @@ type Job struct {
 	markedForDeletion bool
 	cron              *CronJob
 	retry             *RetryJob
+	hooks             []Pair[HookType, JobStateHook]
 }
 
 func (j *Job) SetTargetState(state JobState) error {
+	runHooksFn := func(hookType HookType) {
+		for _, hook := range j.hooks {
+			if hook.Name == hookType {
+				hook.Value(j, state)
+			}
+		}
+	}
+	runHooksFn(PreSetTargetState)
 	j.targetState = state
+	runHooksFn(PostSetTargetState)
 	return nil
 }
 
@@ -72,25 +94,35 @@ func (j *Job) CurrentState() JobState {
 	return j.currentState
 }
 
-func (j *Job) SetCurrentState(currentState JobState) {
-	// if we allow to set the unknow state when the job is ready the restart will be activated
-	if currentState == UnknownState && j.currentState == ReadyState {
-		return
-	}
-
-	j.currentState = currentState
-
-	if j.ShouldRestart() && j.Retry() != nil {
-		if !j.Retry().MarkedForRestart {
-			j.Retry().ComputeNext()
-			j.Retry().MarkedForRestart = true
-			zap.S().Debugw("marked job for restart", "job_id", j.ID(), "next_restart_after", j.Retry().Next())
+func (j *Job) SetCurrentState(state JobState) {
+	runHooksFn := func(hookType HookType) {
+		for _, hook := range j.hooks {
+			if hook.Name == hookType {
+				hook.Value(j, state)
+			}
 		}
 	}
 
-	if currentState == RunningState && j.Retry() != nil {
-		j.Retry().MarkedForRestart = false
+	runHooksFn(PreSetCurrentState)
+
+	// if we allow to set the unknow state when the job is ready the restart will be activated
+	if state == UnknownState && (j.currentState == ReadyState || j.currentState == InactiveState) {
+		return
 	}
+
+	// this is almost a hack until I found something better.
+	// The idea is not to set the current state to unknown if the target state is inactive.
+	// When the target state is inactive it means we stopped the job ourselves but the sync branch of the scheduler will report unknown state
+	// because the job was removed from podman/k8s therefore if we allow the current state to be unknown when the restart will happen, the reply backoff will be looked at
+	// which is wrong. We should be able to restart the job without hitting the backoff function.
+	if state.OneOf(UnknownState, ExitedState) && j.TargetState() == InactiveState {
+		j.currentState = InactiveState
+		return
+	}
+
+	j.currentState = state
+
+	runHooksFn(PostSetCurrentState)
 }
 
 func (j *Job) ShouldRestart() bool {
@@ -147,10 +179,11 @@ type Builder struct {
 	w            Workload
 	cronSpec     string
 	retryBackoff backoff.BackOff
+	hooks        []Pair[HookType, JobStateHook]
 }
 
 func NewBuilder(w Workload) *Builder {
-	return &Builder{w: w}
+	return &Builder{w: w, hooks: make([]Pair[HookType, JobStateHook], 0)}
 }
 
 func (jb *Builder) WithExponentialRetry(initialInterval time.Duration, maxInterval time.Duration, multiplier float64) *Builder {
@@ -173,11 +206,20 @@ func (jb *Builder) WithCron(cronSpec string) *Builder {
 	return jb
 }
 
+func (jb *Builder) AddHook(hookType HookType, fn JobStateHook) *Builder {
+	jb.hooks = append(jb.hooks, Pair[HookType, JobStateHook]{
+		Name:  hookType,
+		Value: fn,
+	})
+	return jb
+}
+
 func (jb *Builder) Build() (*Job, error) {
 	j := &Job{
 		workload:     jb.w,
 		currentState: ReadyState,
 		targetState:  ReadyState,
+		hooks:        make([]Pair[HookType, JobStateHook], 0),
 	}
 
 	if jb.cronSpec != "" {
@@ -197,6 +239,10 @@ func (jb *Builder) Build() (*Job, error) {
 			next: time.Now(),
 			b:    jb.retryBackoff,
 		}
+	}
+
+	if len(jb.hooks) > 0 {
+		j.hooks = append(j.hooks, jb.hooks...)
 	}
 
 	return j, nil
