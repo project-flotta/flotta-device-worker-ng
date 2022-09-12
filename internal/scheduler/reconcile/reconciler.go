@@ -25,6 +25,7 @@ func New() *reconciler {
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, job *entity.Job, ex common.Executor) *entity.Future[entity.Result[entity.JobState]] {
+	zap.S().Debugw("reconcile started", "now", time.Now())
 	fn, ok := r.syncFuncs[job.Workload().Kind()]
 	if !ok {
 		zap.S().Error("job kind not supported")

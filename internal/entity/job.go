@@ -28,12 +28,13 @@ func (cj *CronJob) Next() time.Time {
 }
 
 type RetryJob struct {
-	next time.Time
-	b    backoff.BackOff
+	MarkedForRestart bool
+	next             time.Time
+	b                backoff.BackOff
 }
 
 func (rj *RetryJob) ComputeNext() {
-	rj.next = rj.next.Add(rj.b.NextBackOff())
+	rj.next = time.Now().Add(rj.b.NextBackOff())
 }
 
 func (rj *RetryJob) CanReconcile() bool {
@@ -76,7 +77,20 @@ func (j *Job) SetCurrentState(currentState JobState) {
 	if currentState == UnknownState && j.currentState == ReadyState {
 		return
 	}
+
 	j.currentState = currentState
+
+	if j.ShouldRestart() && j.Retry() != nil {
+		if !j.Retry().MarkedForRestart {
+			j.Retry().ComputeNext()
+			j.Retry().MarkedForRestart = true
+			zap.S().Debugw("marked job for restart", "job_id", j.ID(), "next_restart_after", j.Retry().Next())
+		}
+	}
+
+	if currentState == RunningState && j.Retry() != nil {
+		j.Retry().MarkedForRestart = false
+	}
 }
 
 func (j *Job) ShouldRestart() bool {

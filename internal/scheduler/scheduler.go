@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
@@ -30,6 +31,7 @@ type Scheduler struct {
 	profileEvaluationResults []profile.ProfileEvaluationResult
 	// futures holds the future for each reconciliation function in progress
 	futures map[string]*entity.Future[entity.Result[entity.JobState]]
+	runOnce sync.Once
 }
 
 // New creates a new scheduler with the default heartbeat period of 2 seconds.
@@ -53,28 +55,31 @@ func newScheduler(executor common.Executor, heartbeatPeriod time.Duration) *Sche
 }
 
 func (s *Scheduler) Start(ctx context.Context, input chan entity.Message, profileUpdateCh chan []profile.ProfileEvaluationResult) {
-	runCtx, cancel := context.WithCancel(ctx)
-	s.runCancel = cancel
+	// assure we run only once this function.
+	s.runOnce.Do(func() {
+		runCtx, cancel := context.WithCancel(ctx)
+		s.runCancel = cancel
 
-	jobCh := make(chan entity.Option[[]entity.Workload])
-	go func(ctx context.Context) {
-		for {
-			select {
-			case message := <-input:
-				switch message.Kind {
-				case entity.WorkloadConfigurationMessage:
-					val, ok := message.Payload.(entity.Option[[]entity.Workload])
-					if !ok {
-						zap.S().Errorf("mismatch message payload type. expected workload. got %v", message)
+		jobCh := make(chan entity.Option[[]entity.Workload])
+		go func(ctx context.Context) {
+			for {
+				select {
+				case message := <-input:
+					switch message.Kind {
+					case entity.WorkloadConfigurationMessage:
+						val, ok := message.Payload.(entity.Option[[]entity.Workload])
+						if !ok {
+							zap.S().Errorf("mismatch message payload type. expected workload. got %v", message)
+						}
+						jobCh <- val
 					}
-					jobCh <- val
+				case <-ctx.Done():
+					return
 				}
-			case <-ctx.Done():
-				return
 			}
-		}
-	}(runCtx)
-	go s.run(runCtx, jobCh, profileUpdateCh)
+		}(runCtx)
+		go s.run(runCtx, jobCh, profileUpdateCh)
+	})
 }
 
 func (s *Scheduler) Stop(ctx context.Context) {
@@ -176,10 +181,8 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				* */
 				if j.ShouldRestart() && j.Retry() != nil {
 					if !j.Retry().CanReconcile() {
-						zap.S().Debugw("job cannot be reconciled yet", "job_id", j.ID(), "next_retry", j.Retry().Next())
 						continue
 					}
-					j.Retry().ComputeNext()
 				}
 				// look at the cron only if we need to run the job.
 				if j.TargetState() == entity.RunningState && j.Cron() != nil {
