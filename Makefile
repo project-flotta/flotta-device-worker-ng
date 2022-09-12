@@ -29,16 +29,12 @@ COLOR_LEVEL_ERROR=$(escape)[91m
 COLOR_LEVEL_FATAL=$(escape)[91m
 
 define COLORIZE
-sed -u -e "s/\\\\\"/'/g; \
-s/"message":\(""\)/"message":$(COLOR_BLUE)\1$(RESET_COLOR)/g;        \
-s/ERROR\"\([^\"]*\)\"/error=\"$(COLOR_RED)\1$(RESET_COLOR)\"/g;  \
-s/ProductID:\s\([^\"]*\)/$(COLOR_YELLOW)ProductID: \1$(RESET_COLOR)/g;   \
-s/"trace"/$(COLOR_LEVEL_TRACE)"trace"$(RESET_COLOR)/g;    \
-s/"debug"/$(COLOR_LEVEL_DEBUG)"debug"$(RESET_COLOR)/g;    \
+sed -E 's/"message":(".*")/$(COLOR_BLUE)"message":\1$(RESET_COLOR)/g;   \
+s/"trace"/$(COLOR_LEVEL_TRACE)"trace"$(RESET_COLOR)/g; s/"debug"/$(COLOR_LEVEL_DEBUG)"debug"$(RESET_COLOR)/g;    \
 s/"info"/$(COLOR_LEVEL_INFO)"info"$(RESET_COLOR)/g;       \
 s/"warn"/$(COLOR_LEVEL_WARN)"warning"$(RESET_COLOR)/g; \
-s/"error"/$(COLOR_LEVEL_ERROR)"error"$(RESET_COLOR)/g;    \
-s/"fatal"/level=$(COLOR_LEVEL_FATAL)"fatal"$(RESET_COLOR)/g"
+s/"error":(".*")/$(COLOR_LEVEL_ERROR)"error"\1$(RESET_COLOR)/g;    \
+s/"fatal"/level=$(COLOR_LEVEL_FATAL)"fatal"$(RESET_COLOR)/g'
 endef
 
 export GOFLAGS=-mod=vendor -tags=containers_image_openpgp
