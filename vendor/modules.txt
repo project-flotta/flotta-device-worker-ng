@@ -81,6 +81,8 @@ github.com/cilium/ebpf/link
 # github.com/containerd/cgroups v1.0.3
 ## explicit; go 1.16
 github.com/containerd/cgroups/stats/v1
+github.com/containerd/cgroups/v2
+github.com/containerd/cgroups/v2/stats
 # github.com/containerd/containerd v1.6.6
 ## explicit; go 1.17
 github.com/containerd/containerd/errdefs
@@ -1240,4 +1242,5 @@ sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
+# github.com/containers/podman => github.com/tupyy/podman v0.0.0-20220918165007-628420459bc2
 # github.com/project-flotta/flotta-operator => github.com/tupyy/k4e-operator v0.0.0-20220907171528-a14a339adda9

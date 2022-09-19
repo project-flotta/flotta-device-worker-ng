@@ -17,6 +17,7 @@ import (
 	"github.com/tupyy/device-worker-ng/internal/edge"
 	"github.com/tupyy/device-worker-ng/internal/executor"
 	"github.com/tupyy/device-worker-ng/internal/profile"
+	"github.com/tupyy/device-worker-ng/internal/resources"
 	"github.com/tupyy/device-worker-ng/internal/scheduler"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -30,6 +31,10 @@ var (
 	server     string
 	namespace  string
 	logLevel   string
+)
+
+const (
+	flottaSlice = "flotta"
 )
 
 var rootCmd = &cobra.Command{
@@ -64,7 +69,11 @@ var rootCmd = &cobra.Command{
 
 		controller := edge.New(httpClient, confManager, certManager)
 		profileManager := profile.New(confManager.StateManagerCh)
-		scheduler := scheduler.New(executor)
+		resourceManager, err := resources.New(flottaSlice)
+		if err != nil {
+			panic(err)
+		}
+		scheduler := scheduler.New(executor, resourceManager)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		scheduler.Start(ctx, confManager.SchedulerCh, profileManager.OutputCh)

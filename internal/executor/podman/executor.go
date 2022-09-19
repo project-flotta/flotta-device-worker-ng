@@ -48,7 +48,7 @@ func (e *PodmanExecutor) Run(ctx context.Context, w entity.Workload) error {
 	tmp.Write(yaml)
 	tmp.Close()
 
-	report, err := e.podman.Run(tmp.Name(), workload.ImageRegistryAuth, workload.Annotations)
+	report, err := e.podman.Run(workload.CGroupParent(), tmp.Name(), workload.ImageRegistryAuth, workload.Annotations)
 	if err != nil {
 		zap.S().Errorw("failed to execute workload", "error", err, "report", report)
 		return fmt.Errorf("%w %s workload_name '%s'", common.ErrDeployingWorkload, err, workload.Name)

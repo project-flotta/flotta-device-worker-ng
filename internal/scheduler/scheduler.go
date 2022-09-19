@@ -18,38 +18,49 @@ const (
 	gracefullShutdown      = 5 * time.Second
 )
 
+type evaluationResult entity.Tuple[bool, entity.Option[entity.CpuResource]]
+
 type Scheduler struct {
 	// jobs holds all the current jobs
 	jobs *Store
 	// executor
 	executor common.Executor
+	// resource manager
+	resourceManager common.ResourceManager
 	// runCancel is the cancel function of the run goroutine
 	runCancel context.CancelFunc
 	// reconciler
 	reconciler common.Reconciler
+	// resource reconciler
+	resourceReconciler common.ResourceReconciler
 	// profileEvaluationResults holds the latest profile evaluation results received from profile manager
 	profileEvaluationResults []profile.ProfileEvaluationResult
 	// futures holds the future for each reconciliation function in progress
 	futures map[string]*entity.Future[entity.Result[entity.JobState]]
-	runOnce sync.Once
+	// resourceFutures holds the futures from resource reconciler
+	resourceFutures map[string]*entity.Future[error]
+	runOnce         sync.Once
 }
 
 // New creates a new scheduler with the default heartbeat period of 2 seconds.
-func New(executor common.Executor) *Scheduler {
-	return newScheduler(executor, defaultHeartbeatPeriod)
+func New(executor common.Executor, resourcesEx common.ResourceManager) *Scheduler {
+	return newScheduler(executor, resourcesEx, defaultHeartbeatPeriod)
 }
 
 // New creates a new scheduler with the hearbeat period provided by the user.
-func NewWitHeartbeatPeriod(executor common.Executor, heartbeatPeriod time.Duration) *Scheduler {
-	return newScheduler(executor, heartbeatPeriod)
+func NewWitHeartbeatPeriod(executor common.Executor, resourceManager common.ResourceManager, heartbeatPeriod time.Duration) *Scheduler {
+	return newScheduler(executor, resourceManager, heartbeatPeriod)
 }
 
-func newScheduler(executor common.Executor, heartbeatPeriod time.Duration) *Scheduler {
+func newScheduler(executor common.Executor, rm common.ResourceManager, heartbeatPeriod time.Duration) *Scheduler {
 	return &Scheduler{
 		jobs:                     NewStore(),
 		executor:                 executor,
+		resourceManager:          rm,
 		reconciler:               reconcile.New(),
+		resourceReconciler:       reconcile.NewResourceReconciler(),
 		futures:                  make(map[string]*entity.Future[entity.Result[entity.JobState]]),
+		resourceFutures:          make(map[string]*entity.Future[error]),
 		profileEvaluationResults: make([]profile.ProfileEvaluationResult, 0),
 	}
 }
@@ -93,6 +104,7 @@ func (s *Scheduler) Stop(ctx context.Context) {
 
 func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.Workload], profileCh chan []profile.ProfileEvaluationResult) {
 	sync := make(chan struct{}, 1)
+	resourcesSync := make(chan struct{}, 1)
 
 	heartbeat := time.NewTicker(defaultHeartbeatPeriod)
 
@@ -120,8 +132,11 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				// evaluate job with the latest profile evaluation results
 				if result, err := s.evaluate(j, s.profileEvaluationResults); err != nil {
 					zap.S().Warnw("failed to evaluate profile", "error", err)
-				} else if result {
+				} else if result.Value1 {
 					j.SetTargetState(entity.RunningState)
+					if !result.Value2.None {
+						j.SetTargetResources(result.Value2.Value)
+					}
 				}
 			}
 			// remove job which are not found in the EdgeWorkload manifest
@@ -197,6 +212,38 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				future := s.reconciler.Reconcile(reconcileCtx, j, s.executor)
 				future.CancelFunc = cancel
 				s.futures[j.ID()] = future
+				// sync the resources
+				resourcesSync <- struct{}{}
+			}
+		case <-resourcesSync:
+			for _, j := range s.jobs.ToList() {
+				if future, found := s.resourceFutures[j.ID()]; found {
+					if err, isResolved := future.Poll(); isResolved {
+						if err != nil {
+							zap.S().Errorw("failed to reconcile resources", "job_id", j.ID(), "error", err)
+						} else {
+							zap.S().Infow("resources reconciled", "job_id", j.ID(), "resources", j.TargetResources())
+							j.SetCurrentResources(j.TargetResources())
+						}
+						future.CancelFunc()
+						delete(s.resourceFutures, j.ID())
+					}
+				}
+
+				// reconcile resources only if current <> target and is not marked for deleteion
+				// if job is marked for deletion the parent slice must be removed
+				if j.CurrentResources().Equal(j.TargetResources()) && !j.IsMarkedForDeletion() {
+					continue
+				}
+
+				// TODO: get the actual resources from system.
+				// For now, consider the resources are updated only from device-worker-ng
+
+				// reconcile resources
+				reconcileCtx, cancel := context.WithCancel(ctx)
+				future := s.resourceReconciler.Reconcile(reconcileCtx, j, s.resourceManager)
+				future.CancelFunc = cancel
+				s.resourceFutures[j.ID()] = future
 			}
 		case results := <-profileCh:
 			s.profileEvaluationResults = results
@@ -211,14 +258,19 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					zap.S().Warnw("failed to evaluate profiles", "job_id", j.ID(), "error", err)
 					continue
 				}
-				switch result {
+				switch result.Value1 {
 				case true:
 					zap.S().Infow("job's profiles evaluated to true", "job_id", j.ID(), "job_profiles", j.Workload().Profiles(), "profile_evaluation_result", results)
 					j.SetTargetState(entity.RunningState)
+					if !result.Value2.None {
+						j.SetTargetResources(result.Value2.Value)
+					}
 				case false:
 					zap.S().Infow("job's profiles evaluated to false", "job_id", j.ID(), "job_profiles", j.Workload().Profiles(), "profile_evaluation_result", results)
 					j.SetTargetState(entity.InactiveState)
 				}
+				// sync
+				resourcesSync <- struct{}{}
 			}
 		case <-heartbeat.C:
 			sync <- struct{}{}
@@ -272,9 +324,12 @@ func (s *Scheduler) shouldReconcile(j *entity.Job) bool {
 	return false
 }
 
-func (s *Scheduler) evaluate(j *entity.Job, results []profile.ProfileEvaluationResult) (bool, error) {
+func (s *Scheduler) evaluate(j *entity.Job, results []profile.ProfileEvaluationResult) (evaluationResult, error) {
 	if len(j.Workload().Profiles()) == 0 || len(results) == 0 {
-		return true, nil
+		return evaluationResult{
+			Value1: true,
+			Value2: entity.Option[entity.CpuResource]{None: true},
+		}, nil
 	}
 
 	// make a map with job profile conditions
@@ -294,7 +349,10 @@ func (s *Scheduler) evaluate(j *entity.Job, results []profile.ProfileEvaluationR
 
 		for _, condition := range result.ConditionsResults {
 			if condition.Error != nil {
-				return false, condition.Error
+				return evaluationResult{
+					Value1: false,
+					Value2: entity.Option[entity.CpuResource]{None: true},
+				}, condition.Error
 			}
 			if condition.Value && strings.Contains(jobProfile, condition.Name) && condition.Error == nil {
 				sum++
@@ -306,5 +364,17 @@ func (s *Scheduler) evaluate(j *entity.Job, results []profile.ProfileEvaluationR
 	// if at least one condition for each job's profile is true the sum
 	// must be equal to number of profiles
 	// in this case we consider that the job passed the evaluation
-	return sum >= len(j.Workload().Profiles()), nil
+
+	// we hardcode the result but this must be set based on profile's resources
+	e := evaluationResult{
+		Value1: sum >= len(j.Workload().Profiles()),
+		Value2: entity.Option[entity.CpuResource]{
+			// hardcoded cpu resources at 20% CPU
+			Value: entity.CpuResource{
+				Value1: 20000,
+				Value2: 100000,
+			},
+		},
+	}
+	return e, nil
 }

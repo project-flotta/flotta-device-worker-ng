@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/cenkalti/backoff/v4 v4.1.3
+	github.com/containerd/cgroups v1.0.3
 	github.com/containers/podman/v4 v4.2.0
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/go-openapi/strfmt v0.21.3
@@ -41,7 +42,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/cilium/ebpf v0.7.0 // indirect
-	github.com/containerd/cgroups v1.0.3 // indirect
 	github.com/containerd/containerd v1.6.6 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.12.0 // indirect
 	github.com/containers/buildah v1.27.0 // indirect
@@ -177,4 +177,7 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 )
 
-replace github.com/project-flotta/flotta-operator => github.com/tupyy/k4e-operator v0.0.0-20220907171528-a14a339adda9
+replace (
+	github.com/containers/podman => github.com/tupyy/podman v0.0.0-20220918165007-628420459bc2
+	github.com/project-flotta/flotta-operator => github.com/tupyy/k4e-operator v0.0.0-20220907171528-a14a339adda9
+)
