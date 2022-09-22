@@ -12,7 +12,8 @@ type KubeOptions struct {
 	// Authfile - path to an authentication file.
 	Authfile *string
 	// CertDir - to a directory containing TLS certifications and keys.
-	CertDir *string
+	CGroupParent *string
+	CertDir      *string
 	// Username for authenticating against the registry.
 	Username *string
 	// Password for authenticating against the registry.

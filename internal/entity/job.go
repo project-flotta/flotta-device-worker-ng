@@ -9,6 +9,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// CpuResource holds the quota and the period.
+// Quota - CPU hardcap limit (in usecs). Allowed cpu time in a given period.
+// Period - CPU period to be used for hardcapping (in usecs).
+type CpuResource Tuple[uint64, uint64]
+
+func (c CpuResource) Equal(other CpuResource) bool {
+	return c.Value1 == other.Value1 && c.Value2 == other.Value2
+}
+
 type HookType int
 
 const (
@@ -63,13 +72,17 @@ type Job struct {
 	// currentState holds the current state of the job
 	currentState JobState
 	// targetState holds the desired next state of the job
-	// nextState is mutated by the scheduler when it wants to run/stop the workload
+	// targetState is mutated by the scheduler when it wants to run/stop the workload
 	targetState JobState
 	// markedForDeletion is true if the job has to be deleted
 	markedForDeletion bool
 	cron              *CronJob
 	retry             *RetryJob
 	hooks             []Pair[HookType, JobStateHook]
+	// current resources
+	currentResources CpuResource
+	// target resources
+	targetResources CpuResource
 }
 
 func (j *Job) SetTargetState(state JobState) error {
@@ -173,6 +186,23 @@ func (j *Job) Cron() *CronJob {
 
 func (j *Job) Retry() *RetryJob {
 	return j.retry
+}
+
+func (j *Job) SetCurrentResources(r CpuResource) {
+	j.currentResources = r
+}
+
+func (j *Job) CurrentResources() CpuResource {
+	return j.currentResources
+}
+
+func (j *Job) SetTargetResources(r CpuResource) {
+	zap.S().Debugw("set target resources", "job_id", j.ID(), "target_resources", r)
+	j.targetResources = r
+}
+
+func (j *Job) TargetResources() CpuResource {
+	return j.targetResources
 }
 
 type Builder struct {

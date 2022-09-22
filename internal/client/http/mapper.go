@@ -234,10 +234,20 @@ func configurationModel2Entity(m models.DeviceConfigurationMessage) entity.Devic
 		if len(w.Profiles) > 0 {
 			podWorkload.WorkloadProfiles = make([]entity.WorkloadProfile, 0, len(w.Profiles))
 			for _, profile := range w.Profiles {
-				podWorkload.WorkloadProfiles = append(podWorkload.WorkloadProfiles, entity.WorkloadProfile{
+				wp := entity.WorkloadProfile{
 					Name:       profile.Name,
-					Conditions: profile.Conditions,
-				})
+					Conditions: make([]entity.WorkloadCondition, 0),
+				}
+				for _, c := range profile.Conditions {
+					wc := entity.WorkloadCondition{
+						Name: c.Name,
+					}
+					if c.CPU != nil {
+						wc.CPU = &c.CPU.CPU
+					}
+					wp.Conditions = append(wp.Conditions, wc)
+				}
+				podWorkload.WorkloadProfiles = append(podWorkload.WorkloadProfiles, wp)
 			}
 		}
 

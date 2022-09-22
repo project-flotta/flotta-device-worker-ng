@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"github.com/tupyy/device-worker-ng/internal/executor/common"
@@ -48,7 +49,7 @@ func (e *PodmanExecutor) Run(ctx context.Context, w entity.Workload) error {
 	tmp.Write(yaml)
 	tmp.Close()
 
-	report, err := e.podman.Run(tmp.Name(), workload.ImageRegistryAuth, workload.Annotations)
+	report, err := e.podman.Run(e.createPodCGroupParent(w), tmp.Name(), workload.ImageRegistryAuth, workload.Annotations)
 	if err != nil {
 		zap.S().Errorw("failed to execute workload", "error", err, "report", report)
 		return fmt.Errorf("%w %s workload_name '%s'", common.ErrDeployingWorkload, err, workload.Name)
@@ -111,4 +112,11 @@ func (e *PodmanExecutor) GetState(ctx context.Context, w entity.Workload) (entit
 		}
 	}
 	return entity.UnknownState, nil
+}
+
+func (e *PodmanExecutor) createPodCGroupParent(w entity.Workload) string {
+	if w.IsRootless() {
+		return fmt.Sprintf("flotta-%s.slice", strings.ReplaceAll(w.ID(), "-", "_"))
+	}
+	return fmt.Sprintf("machine-flotta-%s.slice", strings.ReplaceAll(w.ID(), "-", "_"))
 }

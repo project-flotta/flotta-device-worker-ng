@@ -62,7 +62,7 @@ func _new(recv chan entity.Message, evaluator Evaluator) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	m := &Manager{
-		OutputCh:          make(chan []ProfileEvaluationResult),
+		OutputCh:          make(chan []ProfileEvaluationResult, 1),
 		recv:              recv,
 		cancelFunc:        cancel,
 		profilesEvaluator: evaluator,
