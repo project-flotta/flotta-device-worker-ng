@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"regexp"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
 )
@@ -25,7 +26,6 @@ type Executor interface {
 
 type ResourceManager interface {
 	Set(ctx context.Context, path string, resources entity.CpuResource) error
-	RemoveSlice(ctx context.Context, path string) error
-	CreateSlice(ctx context.Context, path string) error
-	SliceExists(ctx context.Context, path string) bool
+	GetCGroup(ctx context.Context, rxp *regexp.Regexp, fullPath bool) (string, error)
+	GetResources(ctx context.Context, cgroup string) (entity.CpuResource, error)
 }

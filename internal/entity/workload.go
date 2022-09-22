@@ -24,7 +24,6 @@ type Workload interface {
 	Cron() string
 	IsRootless() bool
 	Profiles() []WorkloadProfile
-	CGroupParent() string
 }
 
 // PodWorkload represents the workload in form of a pod.
@@ -83,9 +82,9 @@ func (p PodWorkload) String() string {
 	return string(json)
 }
 
-func (p PodWorkload) CGroupParent() string {
-	return fmt.Sprintf("flotta-%s_%s.slice", p.Name, p.Hash()[:12])
-}
+// func (p PodWorkload) CGroupParent() string {
+// 	return fmt.Sprintf("machine-flotta-%s_%s.slice", strings.ReplaceAll(p.Name, "-", "_"), p.Hash()[:12])
+// }
 
 func (p PodWorkload) Hash() string {
 	var sb strings.Builder
@@ -151,5 +150,10 @@ func (a AnsibleWorkload) Hash() string {
 
 type WorkloadProfile struct {
 	Name       string
-	Conditions []string
+	Conditions []WorkloadCondition
+}
+
+type WorkloadCondition struct {
+	Name string
+	CPU  *int64
 }

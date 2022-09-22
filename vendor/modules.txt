@@ -78,8 +78,8 @@ github.com/cilium/ebpf/internal
 github.com/cilium/ebpf/internal/btf
 github.com/cilium/ebpf/internal/unix
 github.com/cilium/ebpf/link
-# github.com/containerd/cgroups v1.0.3
-## explicit; go 1.16
+# github.com/containerd/cgroups v1.0.4
+## explicit; go 1.17
 github.com/containerd/cgroups/stats/v1
 github.com/containerd/cgroups/v2
 github.com/containerd/cgroups/v2/stats
@@ -646,7 +646,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/proglottis/gpgme v0.1.3
 ## explicit; go 1.11
 github.com/proglottis/gpgme
-# github.com/project-flotta/flotta-operator v0.2.0 => github.com/tupyy/k4e-operator v0.0.0-20220907171528-a14a339adda9
+# github.com/project-flotta/flotta-operator v0.2.0 => github.com/tupyy/k4e-operator v0.0.0-20220922030907-d6f97818df71
 ## explicit; go 1.17
 github.com/project-flotta/flotta-operator/models
 # github.com/prometheus/client_golang v1.12.1
@@ -1243,4 +1243,4 @@ sigs.k8s.io/structured-merge-diff/v4/value
 ## explicit; go 1.12
 sigs.k8s.io/yaml
 # github.com/containers/podman => github.com/tupyy/podman v0.0.0-20220918165007-628420459bc2
-# github.com/project-flotta/flotta-operator => github.com/tupyy/k4e-operator v0.0.0-20220907171528-a14a339adda9
+# github.com/project-flotta/flotta-operator => github.com/tupyy/k4e-operator v0.0.0-20220922030907-d6f97818df71

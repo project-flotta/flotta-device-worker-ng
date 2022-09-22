@@ -83,6 +83,7 @@ func (c *Client) Enrol(ctx context.Context, deviceID string, enrolInfo entity.En
 	if err != nil {
 		return fmt.Errorf("cannot enrol device '%w'", err)
 	}
+	defer response.Body.Close()
 
 	if response.StatusCode >= 400 {
 		return fmt.Errorf("cannot enrol device. code: %d", response.StatusCode)
@@ -108,6 +109,7 @@ func (c *Client) Register(ctx context.Context, deviceID string, registerInfo ent
 	if err != nil {
 		return entity.RegistrationResponse{}, fmt.Errorf("cannot register device '%w'", err)
 	}
+	defer response.Body.Close()
 
 	data, err := extractData(response, certificateKey, func(data string) (string, error) { return data, nil })
 	if err != nil {
@@ -134,6 +136,7 @@ func (c *Client) Heartbeat(ctx context.Context, deviceID string, heartbeat entit
 	if err != nil {
 		return fmt.Errorf("cannot send heartbeat '%w'", err)
 	}
+	defer response.Body.Close()
 
 	// TODO send typed error based on status code
 	if response.StatusCode >= 400 {
@@ -159,6 +162,7 @@ func (c *Client) GetConfiguration(ctx context.Context, deviceID string) (entity.
 	if err != nil {
 		return entity.DeviceConfigurationMessage{}, fmt.Errorf("cannot get configuration '%w'", err)
 	}
+	defer response.Body.Close()
 
 	// TODO check the response code
 
@@ -207,8 +211,9 @@ func (c *Client) createTransport() (result http.RoundTripper, err error) {
 	tlsConfig, err = c.createTLSConfig()
 
 	result = &http.Transport{
-		Proxy:           http.ProxyFromEnvironment,
-		TLSClientConfig: tlsConfig,
+		Proxy:                 http.ProxyFromEnvironment,
+		TLSClientConfig:       tlsConfig,
+		ResponseHeaderTimeout: 5 * time.Second,
 	}
 
 	// call the other wrappers backwards

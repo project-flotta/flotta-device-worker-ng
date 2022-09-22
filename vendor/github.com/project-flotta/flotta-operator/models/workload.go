@@ -55,6 +55,9 @@ type Workload struct {
 	// profiles
 	Profiles []*WorkloadProfile `json:"profiles"`
 
+	// retry
+	Retry *Retry `json:"retry,omitempty"`
+
 	// permission
 	Rootless bool `json:"rootless,omitempty"`
 
@@ -83,6 +86,10 @@ func (m *Workload) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateProfiles(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateRetry(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -192,6 +199,25 @@ func (m *Workload) validateProfiles(formats strfmt.Registry) error {
 	return nil
 }
 
+func (m *Workload) validateRetry(formats strfmt.Registry) error {
+	if swag.IsZero(m.Retry) { // not required
+		return nil
+	}
+
+	if m.Retry != nil {
+		if err := m.Retry.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("retry")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("retry")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
 // ContextValidate validate this workload based on the context it is used
 func (m *Workload) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
@@ -213,6 +239,10 @@ func (m *Workload) ContextValidate(ctx context.Context, formats strfmt.Registry)
 	}
 
 	if err := m.contextValidateProfiles(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.contextValidateRetry(ctx, formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -299,6 +329,22 @@ func (m *Workload) contextValidateProfiles(ctx context.Context, formats strfmt.R
 			}
 		}
 
+	}
+
+	return nil
+}
+
+func (m *Workload) contextValidateRetry(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.Retry != nil {
+		if err := m.Retry.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("retry")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("retry")
+			}
+			return err
+		}
 	}
 
 	return nil

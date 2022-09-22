@@ -25,7 +25,6 @@ func New() *reconciler {
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, job *entity.Job, ex common.Executor) *entity.Future[entity.Result[entity.JobState]] {
-	zap.S().Debugw("reconcile started", "now", time.Now())
 	fn, ok := r.syncFuncs[job.Workload().Kind()]
 	if !ok {
 		zap.S().Error("job kind not supported")
@@ -50,6 +49,8 @@ func createPodmanSyncFunc() syncFunc {
 		if j.CurrentState() == j.TargetState() {
 			return j.CurrentState(), nil
 		}
+
+		zap.S().Debugw("reconcile job", "job_id", j.ID(), "job_kind", "pod", "current_state", j.CurrentState(), "target_state", j.TargetState())
 
 		if j.TargetState() == entity.RunningState {
 			zap.S().Infow("run job", "job_id", j.ID())
@@ -100,6 +101,8 @@ func createK8SSyncFunc() syncFunc {
 		if j.CurrentState() == j.TargetState() {
 			return j.CurrentState(), nil
 		}
+
+		zap.S().Debugw("reconcile job", "job_id", j.ID(), "job_kind", "k8s", "current_state", j.CurrentState(), "target_state", j.TargetState())
 
 		if j.TargetState() == entity.RunningState {
 			zap.S().Infow("create deployment", "job_id", j.ID())

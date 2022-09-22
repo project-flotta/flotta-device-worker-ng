@@ -197,6 +197,7 @@ func (j *Job) CurrentResources() CpuResource {
 }
 
 func (j *Job) SetTargetResources(r CpuResource) {
+	zap.S().Debugw("set target resources", "job_id", j.ID(), "target_resources", r)
 	j.targetResources = r
 }
 

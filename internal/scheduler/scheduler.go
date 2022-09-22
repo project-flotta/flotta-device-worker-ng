@@ -2,12 +2,17 @@ package scheduler
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	reflect "reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"github.com/tupyy/device-worker-ng/internal/profile"
+	"github.com/tupyy/device-worker-ng/internal/resources"
 	"github.com/tupyy/device-worker-ng/internal/scheduler/common"
 	"github.com/tupyy/device-worker-ng/internal/scheduler/reconcile"
 	"go.uber.org/zap"
@@ -18,7 +23,10 @@ const (
 	gracefullShutdown      = 5 * time.Second
 )
 
-type evaluationResult entity.Tuple[bool, entity.Option[entity.CpuResource]]
+type evaluationResult struct {
+	Active   bool
+	Resource entity.Option[entity.CpuResource]
+}
 
 type Scheduler struct {
 	// jobs holds all the current jobs
@@ -39,7 +47,8 @@ type Scheduler struct {
 	futures map[string]*entity.Future[entity.Result[entity.JobState]]
 	// resourceFutures holds the futures from resource reconciler
 	resourceFutures map[string]*entity.Future[error]
-	runOnce         sync.Once
+	// runOnce prevents starting main goroute multiple times is _Start_ is called
+	runOnce sync.Once
 }
 
 // New creates a new scheduler with the default heartbeat period of 2 seconds.
@@ -130,12 +139,10 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				}
 				s.jobs.Add(j)
 				// evaluate job with the latest profile evaluation results
-				if result, err := s.evaluate(j, s.profileEvaluationResults); err != nil {
-					zap.S().Warnw("failed to evaluate profile", "error", err)
-				} else if result.Value1 {
+				if result := s.evaluate(j, s.profileEvaluationResults); result.Active {
 					j.SetTargetState(entity.RunningState)
-					if !result.Value2.None {
-						j.SetTargetResources(result.Value2.Value)
+					if !result.Resource.None {
+						j.SetTargetResources(result.Resource.Value)
 					}
 				}
 			}
@@ -212,32 +219,46 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				future := s.reconciler.Reconcile(reconcileCtx, j, s.executor)
 				future.CancelFunc = cancel
 				s.futures[j.ID()] = future
-				// sync the resources
-				resourcesSync <- struct{}{}
 			}
+			// sync the resources
+			resourcesSync <- struct{}{}
 		case <-resourcesSync:
 			for _, j := range s.jobs.ToList() {
+				// skip jobs that don't have resources set
+				if j.TargetResources().Equal(entity.CpuResource{}) {
+					continue
+				}
+
 				if future, found := s.resourceFutures[j.ID()]; found {
 					if err, isResolved := future.Poll(); isResolved {
 						if err != nil {
 							zap.S().Errorw("failed to reconcile resources", "job_id", j.ID(), "error", err)
 						} else {
 							zap.S().Infow("resources reconciled", "job_id", j.ID(), "resources", j.TargetResources())
-							j.SetCurrentResources(j.TargetResources())
+							j.SetTargetResources(j.TargetResources())
 						}
 						future.CancelFunc()
 						delete(s.resourceFutures, j.ID())
 					}
 				}
 
-				// reconcile resources only if current <> target and is not marked for deleteion
-				// if job is marked for deletion the parent slice must be removed
-				if j.CurrentResources().Equal(j.TargetResources()) && !j.IsMarkedForDeletion() {
+				// only jobs with current state == running are looked at
+				if j.CurrentState() != entity.RunningState || j.IsMarkedForDeletion() || j.Workload().Kind() == entity.K8SKind {
 					continue
 				}
 
-				// TODO: get the actual resources from system.
-				// For now, consider the resources are updated only from device-worker-ng
+				// get resources from system
+				resources, err := s.getJobResources(context.TODO(), j)
+				if err != nil {
+					zap.S().Errorw("failed to read resources", "job_id", j.ID(), "error", err)
+					continue
+				}
+				j.SetCurrentResources(resources)
+
+				// reconcile resources only if current <> target and is not marked for deleteion
+				if j.CurrentResources().Equal(j.TargetResources()) {
+					continue
+				}
 
 				// reconcile resources
 				reconcileCtx, cancel := context.WithCancel(ctx)
@@ -246,6 +267,9 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				s.resourceFutures[j.ID()] = future
 			}
 		case results := <-profileCh:
+			if reflect.DeepEqual(s.profileEvaluationResults, results) {
+				break
+			}
 			s.profileEvaluationResults = results
 			zap.S().Infow("start evaluating job", "profile evaluation result", results)
 			for _, j := range s.jobs.ToList() {
@@ -253,25 +277,21 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				if j.IsMarkedForDeletion() {
 					continue
 				}
-				result, err := s.evaluate(j, results)
-				if err != nil {
-					zap.S().Warnw("failed to evaluate profiles", "job_id", j.ID(), "error", err)
-					continue
-				}
-				switch result.Value1 {
+				result := s.evaluate(j, results)
+				switch result.Active {
 				case true:
 					zap.S().Infow("job's profiles evaluated to true", "job_id", j.ID(), "job_profiles", j.Workload().Profiles(), "profile_evaluation_result", results)
 					j.SetTargetState(entity.RunningState)
-					if !result.Value2.None {
-						j.SetTargetResources(result.Value2.Value)
+					if !result.Resource.None {
+						j.SetTargetResources(result.Resource.Value)
 					}
 				case false:
 					zap.S().Infow("job's profiles evaluated to false", "job_id", j.ID(), "job_profiles", j.Workload().Profiles(), "profile_evaluation_result", results)
 					j.SetTargetState(entity.InactiveState)
 				}
-				// sync
-				resourcesSync <- struct{}{}
 			}
+			// sync
+			resourcesSync <- struct{}{}
 		case <-heartbeat.C:
 			sync <- struct{}{}
 		case <-ctx.Done():
@@ -324,57 +344,127 @@ func (s *Scheduler) shouldReconcile(j *entity.Job) bool {
 	return false
 }
 
-func (s *Scheduler) evaluate(j *entity.Job, results []profile.ProfileEvaluationResult) (evaluationResult, error) {
+func (s *Scheduler) evaluate(j *entity.Job, results []profile.ProfileEvaluationResult) evaluationResult {
 	if len(j.Workload().Profiles()) == 0 || len(results) == 0 {
 		return evaluationResult{
-			Value1: true,
-			Value2: entity.Option[entity.CpuResource]{None: true},
-		}, nil
+			Active:   true,
+			Resource: entity.Option[entity.CpuResource]{None: true},
+		}
 	}
 
-	// make a map with job profile conditions
-	m := make(map[string]string)
+	/* map to hold evaluation results
+	the key is the profile name and the value is a list of evaluation results for each profile's condition
+	*/
+	resultsMap := make(map[string][]*entity.Tuple[string, evaluationResult])
+
+	// we populate the map with not active evaluation results.
 	for _, p := range j.Workload().Profiles() {
-		conditions := strings.Join(p.Conditions, ",")
-		m[p.Name] = conditions
+		resultsMap[p.Name] = make([]*entity.Tuple[string, evaluationResult], 0, len(p.Conditions))
+		for _, condition := range p.Conditions {
+			conditionEv := entity.Tuple[string, evaluationResult]{
+				Value1: condition.Name,
+				Value2: evaluationResult{
+					Active: false,
+					Resource: entity.Option[entity.CpuResource]{
+						None:  true,
+						Value: entity.CpuResource{},
+					},
+				},
+			}
+			if condition.CPU != nil {
+				conditionEv.Value2.Resource.None = false
+				conditionEv.Value2.Resource.Value = entity.CpuResource{
+					Value1: uint64(*condition.CPU),
+					Value2: 100000,
+				}
+			}
+			resultsMap[p.Name] = append(resultsMap[p.Name], &conditionEv)
+		}
 	}
 
-	// for each profile's condition evaluated to true try to find it in the job conditions
-	sum := 0
-	for _, result := range results {
-		jobProfile, found := m[result.Name]
-		if !found {
-			continue
+	findFn := func(name string, list []*entity.Tuple[string, evaluationResult]) *entity.Tuple[string, evaluationResult] {
+		for i := 0; i < len(list); i++ {
+			elem := list[i]
+			if elem.Value1 == name {
+				return elem
+			}
 		}
+		return &entity.Tuple[string, evaluationResult]{}
+	}
 
-		for _, condition := range result.ConditionsResults {
+	// // evaluate each condition of each profile
+	for i := 0; i < len(results); i++ {
+		result := results[i]
+		profileResults := resultsMap[result.Name]
+		for j := 0; j < len(result.ConditionsResults); j++ {
+			condition := result.ConditionsResults[j]
+			er := findFn(condition.Name, profileResults) // should be ok
+			// do not evaluate the profile if there is an error.
 			if condition.Error != nil {
-				return evaluationResult{
-					Value1: false,
-					Value2: entity.Option[entity.CpuResource]{None: true},
-				}, condition.Error
+				continue
 			}
-			if condition.Value && strings.Contains(jobProfile, condition.Name) && condition.Error == nil {
-				sum++
-				break
+			if condition.Value {
+				er.Value2.Active = true
 			}
 		}
 	}
 
-	// if at least one condition for each job's profile is true the sum
-	// must be equal to number of profiles
-	// in this case we consider that the job passed the evaluation
-
-	// we hardcode the result but this must be set based on profile's resources
-	e := evaluationResult{
-		Value1: sum >= len(j.Workload().Profiles()),
-		Value2: entity.Option[entity.CpuResource]{
-			// hardcoded cpu resources at 20% CPU
-			Value: entity.CpuResource{
-				Value1: 20000,
-				Value2: 100000,
-			},
-		},
+	// for job to be evaluated to true it needs that a least one condition per profile to be true
+	// the resources with min CPU will be returned
+	minCpu := int64(100000)
+	resource := entity.Option[entity.CpuResource]{
+		None:  true,
+		Value: entity.CpuResource{},
 	}
-	return e, nil
+	// sum holds the number of active profiles. if sum >= len(profiles) than job is evaluated to true
+	sum := 0
+	for _, evaluationResults := range resultsMap {
+		foundActive := false
+		for _, evaluationResult := range evaluationResults {
+			if evaluationResult.Value2.Active {
+				foundActive = true
+				if evaluationResult.Value2.Resource.None {
+					continue
+				}
+				if evaluationResult.Value2.Resource.Value.Value1 <= uint64(minCpu) {
+					resource = evaluationResult.Value2.Resource
+					minCpu = int64(resource.Value.Value1)
+				}
+			}
+		}
+		if foundActive {
+			sum++
+		}
+	}
+
+	// for now, we consider that every profile has a resource defined
+	e := evaluationResult{
+		Active:   sum >= len(results),
+		Resource: resource,
+	}
+	zap.S().Debugw("job evaluation result", "job_id", j.ID(), "result", e)
+	return e
+}
+
+func (s *Scheduler) getJobResources(ctx context.Context, job *entity.Job) (entity.CpuResource, error) {
+	pattern := fmt.Sprintf("%s", strings.ReplaceAll(job.ID(), "-", "_"))
+	cgroup, err := s.resourceManager.GetCGroup(ctx, regexp.MustCompile(pattern), true)
+	if err != nil {
+		return entity.CpuResource{}, err
+	}
+
+	// strip the mountpoint /sys/fs/cgroup from path
+	parts := strings.Split(cgroup, "/")
+	cg := fmt.Sprintf("/%s", strings.Join(parts[4:], "/"))
+	if cg == "" {
+		return entity.CpuResource{}, fmt.Errorf("failed to find cgroup for job '%s'", job.ID())
+	}
+
+	cpu, err := s.resourceManager.GetResources(ctx, cg)
+	if err != nil {
+		if errors.Is(err, resources.ErrCPUMaxFileNotFound) {
+			return cpu, nil
+		}
+	}
+	return cpu, err
 }

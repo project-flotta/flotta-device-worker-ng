@@ -69,10 +69,7 @@ var rootCmd = &cobra.Command{
 
 		controller := edge.New(httpClient, confManager, certManager)
 		profileManager := profile.New(confManager.StateManagerCh)
-		resourceManager, err := resources.New(flottaSlice)
-		if err != nil {
-			panic(err)
-		}
+		resourceManager := resources.New()
 		scheduler := scheduler.New(executor, resourceManager)
 
 		ctx, cancel := context.WithCancel(context.Background())
