@@ -110,12 +110,10 @@ For this workload, we add only one condition `off` so, if that condition is `tru
 
 ## Prerequisites
 
-You must have flotta operator and API server running and client certificates already generated.
-For more information, please read the [documentation](https://project-flotta.io/documentation/latest/intro/overview.html).
-
-**Remark:**
-
-To have a support for `profiles`, `retry` and `cron` feature, you may need to use this repo [github.com/tupyy/k4e-operator](github.com/tupyy/k4e-operator) of `flotta-edge-api` and `flotta-controller` because, curently, the official repo does not support those feature:
+You may need to use this repo [github.com/tupyy/k4e-operator](github.com/tupyy/k4e-operator) of `flotta-edge-api` and `flotta-controller` because, currently, the official repo does not support features like:
+_profiles_, _retry_ or _cron_.
+Also, **podman** has been modified to allow passing the option `cgroupParent` to command `kube play` which is not supported in the official repo.
+For that, you may need to use this modified version of podman [github.com/tupyy/podman](github.com/tupyy/podman).
 
 
 ## Build
