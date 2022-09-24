@@ -112,8 +112,9 @@ func (s *Scheduler) Stop(ctx context.Context) {
 }
 
 func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.Workload], profileCh chan []profile.ProfileEvaluationResult) {
-	sync := make(chan struct{}, 1)
-	resourcesSync := make(chan struct{}, 1)
+	executionSync := make(chan struct{}, 1)
+	resourceSync := make(chan struct{}, 1)
+	evaluationSync := make(chan struct{}, 1)
 
 	heartbeat := time.NewTicker(defaultHeartbeatPeriod)
 
@@ -138,20 +139,24 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					continue
 				}
 				s.jobs.Add(j)
-				// evaluate job with the latest profile evaluation results
-				if result := s.evaluate(j, s.profileEvaluationResults); result.Active {
-					j.SetTargetState(entity.RunningState)
-					if !result.Resource.None {
-						j.SetTargetResources(result.Resource.Value)
-					}
-				}
+			}
+			// evaluate the new jobs with the latest profile evaluation results
+			select {
+			case evaluationSync <- struct{}{}:
+			default:
 			}
 			// remove job which are not found in the EdgeWorkload manifest
 			for _, j := range jobsToRemove {
 				j.MarkForDeletion()
 				j.SetTargetState(entity.ExitedState)
 			}
-		case <-sync:
+		case results := <-profileCh:
+			if reflect.DeepEqual(s.profileEvaluationResults, results) {
+				break
+			}
+			s.profileEvaluationResults = results
+			evaluationSync <- struct{}{}
+		case <-executionSync:
 			for _, j := range s.jobs.ToList() {
 				// if there is already a reconciliation function in progress check if the future has been resolved.
 				if future, found := s.futures[j.ID()]; found {
@@ -183,8 +188,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				}
 				j.SetCurrentState(state)
 
-				// If it is marked for deletion but it is still running then keep going with the reconciliation until we stop the job
-				// and then remove it
+				// remove the job only if it is markedForDeletion and it is stopped otherwise continue. The target state should be ExitedState.
 				if j.IsMarkedForDeletion() && j.CurrentState().OneOf(entity.UnknownState, entity.ExitedState, entity.ReadyState) {
 					zap.S().Infow("job removed", "job_id", j.ID())
 					s.jobs.Delete(j)
@@ -221,10 +225,10 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				s.futures[j.ID()] = future
 			}
 			// sync the resources
-			resourcesSync <- struct{}{}
-		case <-resourcesSync:
+			resourceSync <- struct{}{}
+		case <-resourceSync:
 			for _, j := range s.jobs.ToList() {
-				// skip jobs that don't have resources set
+				// skip jobs that don't have target resources set
 				if j.TargetResources().Equal(entity.CpuResource{}) {
 					continue
 				}
@@ -242,7 +246,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 					}
 				}
 
-				// only jobs with current state == running are looked at
+				// only jobs with running, not marked for deletion or k8s jobs are synced
 				if j.CurrentState() != entity.RunningState || j.IsMarkedForDeletion() || j.Workload().Kind() == entity.K8SKind {
 					continue
 				}
@@ -255,7 +259,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				}
 				j.SetCurrentResources(resources)
 
-				// reconcile resources only if current <> target and is not marked for deleteion
+				// reconcile resources only if current <> target
 				if j.CurrentResources().Equal(j.TargetResources()) {
 					continue
 				}
@@ -266,34 +270,30 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				future.CancelFunc = cancel
 				s.resourceFutures[j.ID()] = future
 			}
-		case results := <-profileCh:
-			if reflect.DeepEqual(s.profileEvaluationResults, results) {
-				break
-			}
-			s.profileEvaluationResults = results
-			zap.S().Infow("start evaluating job", "profile evaluation result", results)
+		case <-evaluationSync:
+			zap.S().Infow("start evaluating job", "profile evaluation result", s.profileEvaluationResults)
 			for _, j := range s.jobs.ToList() {
 				// don't evaluate job marked for deletion
 				if j.IsMarkedForDeletion() {
 					continue
 				}
-				result := s.evaluate(j, results)
+				result := s.evaluate(j, s.profileEvaluationResults)
 				switch result.Active {
 				case true:
-					zap.S().Infow("job's profiles evaluated to true", "job_id", j.ID(), "job_profiles", j.Workload().Profiles(), "profile_evaluation_result", results)
+					zap.S().Infow("job's profiles evaluated to true", "job_id", j.ID(), "job_profiles", j.Workload().Profiles(), "profile_evaluation_result", s.profileEvaluationResults)
 					j.SetTargetState(entity.RunningState)
 					if !result.Resource.None {
 						j.SetTargetResources(result.Resource.Value)
 					}
 				case false:
-					zap.S().Infow("job's profiles evaluated to false", "job_id", j.ID(), "job_profiles", j.Workload().Profiles(), "profile_evaluation_result", results)
+					zap.S().Infow("job's profiles evaluated to false", "job_id", j.ID(), "job_profiles", j.Workload().Profiles(), "profile_evaluation_result", s.profileEvaluationResults)
 					j.SetTargetState(entity.InactiveState)
 				}
 			}
-			// sync
-			resourcesSync <- struct{}{}
+			// sync resources
+			resourceSync <- struct{}{}
 		case <-heartbeat.C:
-			sync <- struct{}{}
+			executionSync <- struct{}{}
 		case <-ctx.Done():
 			return
 		}
