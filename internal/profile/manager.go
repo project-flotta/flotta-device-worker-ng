@@ -118,12 +118,11 @@ func (m *Manager) run(ctx context.Context) {
 			evaluate <- struct{}{}
 		case <-evaluate:
 			opt := m.profilesEvaluator.Evaluate(m.metrics)
-			zap.S().Debugw("evaluate profiles", "results", opt.Value)
 			if opt.None {
 				break
 			}
+			zap.S().Debugw("evaluate profiles", "results", opt.Value)
 			m.OutputCh <- opt.Value
-
 		case <-ctx.Done():
 			return
 		}
