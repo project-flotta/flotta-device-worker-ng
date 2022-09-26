@@ -205,6 +205,31 @@ func (j *Job) TargetResources() CpuResource {
 	return j.targetResources
 }
 
+func (j *Job) Clone() *Job {
+	clone := &Job{
+		workload:          j.workload,
+		currentState:      j.currentState,
+		targetState:       j.targetState,
+		markedForDeletion: j.markedForDeletion,
+		hooks:             j.hooks[:],
+		currentResources:  j.currentResources,
+		targetResources:   j.targetResources,
+	}
+
+	clone.cron = &CronJob{
+		next:     time.UnixMicro(j.cron.next.UnixMicro()),
+		schedule: j.cron.schedule,
+	}
+
+	clone.retry = &RetryJob{
+		next:             time.UnixMicro(j.retry.next.UnixMicro()),
+		MarkedForRestart: j.retry.MarkedForRestart,
+		b:                j.retry.b,
+	}
+
+	return clone
+}
+
 type Builder struct {
 	w            Workload
 	cronSpec     string
