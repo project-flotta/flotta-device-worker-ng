@@ -216,15 +216,19 @@ func (j *Job) Clone() *Job {
 		targetResources:   j.targetResources,
 	}
 
-	clone.cron = &CronJob{
-		next:     time.UnixMicro(j.cron.next.UnixMicro()),
-		schedule: j.cron.schedule,
+	if j.cron != nil {
+		clone.cron = &CronJob{
+			next:     time.UnixMicro(j.cron.next.UnixMicro()),
+			schedule: j.cron.schedule,
+		}
 	}
 
-	clone.retry = &RetryJob{
-		next:             time.UnixMicro(j.retry.next.UnixMicro()),
-		MarkedForRestart: j.retry.MarkedForRestart,
-		b:                j.retry.b,
+	if j.retry != nil {
+		clone.retry = &RetryJob{
+			next:             time.UnixMicro(j.retry.next.UnixMicro()),
+			MarkedForRestart: j.retry.MarkedForRestart,
+			b:                j.retry.b,
+		}
 	}
 
 	return clone

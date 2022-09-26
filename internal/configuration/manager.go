@@ -9,6 +9,10 @@ import (
 	"go.uber.org/zap"
 )
 
+type WorkloadStatusReader interface {
+	GetWorkloadsStatus() map[string]entity.JobState
+}
+
 var (
 	// default configuration
 	defaultConfiguration = entity.DeviceConfigurationMessage{
@@ -30,9 +34,10 @@ type Manager struct {
 	// StateManagerCh is the channel to communicate with state manager
 	StateManagerCh chan entity.Message
 
-	conf     entity.DeviceConfigurationMessage
-	hardware entity.HardwareInfo
-	lock     sync.Mutex
+	conf         entity.DeviceConfigurationMessage
+	hardware     entity.HardwareInfo
+	lock         sync.Mutex
+	statusReader WorkloadStatusReader
 }
 
 func New() *Manager {
@@ -52,6 +57,10 @@ func (c *Manager) HardwareInfo() entity.HardwareInfo {
 
 func (c *Manager) Configuration() entity.DeviceConfigurationMessage {
 	return c.conf
+}
+
+func (c *Manager) SetWorkloadStatusReader(r WorkloadStatusReader) {
+	c.statusReader = r
 }
 
 func (c *Manager) SetConfiguration(newConf entity.DeviceConfigurationMessage) {
@@ -86,8 +95,33 @@ func (c *Manager) SetConfiguration(newConf entity.DeviceConfigurationMessage) {
 }
 
 func (c *Manager) Heartbeat() entity.Heartbeat {
+	var workloadStatus map[string]entity.JobState
+	if c.statusReader != nil {
+		workloadStatus = c.statusReader.GetWorkloadsStatus()
+	}
+
+	statusMapper := func(ws map[string]entity.JobState) []*entity.WorkloadStatus {
+		status := make([]*entity.WorkloadStatus, 0, len(ws))
+		for name, state := range ws {
+			ss := entity.WorkloadStatus{
+				Name: name,
+			}
+			switch state {
+			case entity.RunningState:
+				ss.Status = entity.Running
+			case entity.InactiveState, entity.UnknownState, entity.ReadyState:
+				ss.Status = entity.Stopped
+			default:
+				ss.Status = entity.Crashed
+			}
+			status = append(status, &ss)
+		}
+		return status
+	}
+
 	return entity.Heartbeat{
-		Hardware: &c.hardware,
+		Hardware:  &c.hardware,
+		Workloads: statusMapper(workloadStatus),
 	}
 }
 

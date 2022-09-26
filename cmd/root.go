@@ -74,6 +74,7 @@ var rootCmd = &cobra.Command{
 
 		ctx, cancel := context.WithCancel(context.Background())
 		scheduler.Start(ctx, confManager.SchedulerCh, profileManager.OutputCh)
+		confManager.SetWorkloadStatusReader(scheduler)
 
 		done := make(chan os.Signal, 1)
 		signal.Notify(done, os.Interrupt, os.Kill)
