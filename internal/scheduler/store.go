@@ -61,9 +61,13 @@ func (s *Store) ToList() []*entity.Job {
 }
 
 func (s *Store) Clone() *Store {
-	return &Store{
-		jobs: s.jobs[:],
+	clone := &Store{
+		jobs: make([]*entity.Job, 0, len(s.jobs)),
 	}
+	for _, j := range s.jobs {
+		clone.jobs = append(clone.jobs, j.Clone())
+	}
+	return clone
 }
 
 func (s *Store) index(id string) (int, error) {
