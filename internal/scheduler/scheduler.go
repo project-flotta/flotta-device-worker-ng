@@ -116,6 +116,14 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 	resourceSync := make(chan struct{}, 1)
 	evaluationSync := make(chan struct{}, 1)
 
+	// advanceTo does not block
+	advanceTo := func(ch chan struct{}) {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+
 	heartbeat := time.NewTicker(defaultHeartbeatPeriod)
 
 	for {
@@ -155,7 +163,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				break
 			}
 			s.profileEvaluationResults = results
-			evaluationSync <- struct{}{}
+			advanceTo(evaluationSync)
 		case <-executionSync:
 			for _, j := range s.jobs.ToList() {
 				// if there is already a reconciliation function in progress check if the future has been resolved.
@@ -225,7 +233,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				s.futures[j.ID()] = future
 			}
 			// sync the resources
-			resourceSync <- struct{}{}
+			advanceTo(resourceSync)
 		case <-resourceSync:
 			for _, j := range s.jobs.ToList() {
 				// skip jobs that don't have target resources set
@@ -291,13 +299,29 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 				}
 			}
 			// sync resources
-			resourceSync <- struct{}{}
+			advanceTo(resourceSync)
 		case <-heartbeat.C:
 			executionSync <- struct{}{}
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+func (s *Scheduler) GetWorkloadsStatus() map[string]entity.JobState {
+	status := make(map[string]entity.JobState)
+	for _, j := range s.jobs.Clone().jobs {
+		var name string
+		switch j.Workload().Kind() {
+		case entity.PodKind:
+			pod, _ := j.Workload().(entity.PodWorkload)
+			name = pod.Name
+		default:
+			continue
+		}
+		status[name] = j.CurrentState()
+	}
+	return status
 }
 
 func (s *Scheduler) createJob(w entity.Workload) (*entity.Job, error) {
