@@ -1,4 +1,4 @@
-package config
+package configuration
 
 import (
 	"fmt"
@@ -40,7 +40,10 @@ type RetryConfig struct {
 	MaxElapsedTime  time.Duration
 }
 
-var v *viper.Viper
+var (
+	v        *viper.Viper
+	CommitID string
+)
 
 func InitConfiguration(cmd *cobra.Command, configFile string) error {
 	v = viper.New()
@@ -48,8 +51,9 @@ func InitConfiguration(cmd *cobra.Command, configFile string) error {
 	v.SetEnvPrefix(prefix)
 	v.AutomaticEnv() // read in environment variables that match
 
+	zap.S().Infow("build commit", "id", CommitID)
 	if len(configFile) > 0 {
-		zap.S().Infof("using config file: %v", viper.ConfigFileUsed())
+		zap.S().Infow("configuration file used", "path", configFile)
 		v.SetConfigFile(configFile)
 
 		err := v.ReadInConfig()

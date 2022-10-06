@@ -50,6 +50,8 @@ var rootCmd = &cobra.Command{
 		undo := zap.ReplaceGlobals(logger)
 		defer undo()
 
+		config.InitConfiguration(cmd, configFile)
+
 		certManager, err := initCertificateManager(caRoot, certFile, privateKey)
 		if err != nil {
 			panic(err)
