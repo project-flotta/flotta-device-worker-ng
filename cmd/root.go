@@ -40,9 +40,6 @@ const (
 var rootCmd = &cobra.Command{
 	Use:   "device-worker-ng",
 	Short: "Device worker",
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		return config.InitConfiguration(cmd, configFile)
-	},
 	Run: func(cmd *cobra.Command, args []string) {
 		logger := setupLogger()
 		defer logger.Sync()
