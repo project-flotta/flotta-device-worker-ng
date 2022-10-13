@@ -3,6 +3,7 @@ package edge
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	config "github.com/tupyy/device-worker-ng/configuration"
@@ -34,6 +35,7 @@ type Controller struct {
 	confManager *configuration.Manager
 	certManager *certificate.Manager
 	done        chan chan struct{}
+	runOnce     sync.Once
 }
 
 func New(client Client, confManager *configuration.Manager, certManager *certificate.Manager) *Controller {
@@ -44,9 +46,13 @@ func New(client Client, confManager *configuration.Manager, certManager *certifi
 		done:        make(chan chan struct{}, 1),
 	}
 
-	go c.run()
-
 	return c
+}
+
+func (c *Controller) Start(ctx context.Context) {
+	c.runOnce.Do(func() {
+		go c.run(ctx)
+	})
 }
 
 func (c *Controller) Shutdown(ctx context.Context) {
@@ -55,7 +61,7 @@ func (c *Controller) Shutdown(ctx context.Context) {
 	<-d
 }
 
-func (c *Controller) run() {
+func (c *Controller) run(ctx context.Context) {
 	var (
 		register      chan struct{}
 		enrol         = make(chan struct{}, 1)
@@ -182,6 +188,9 @@ func (c *Controller) run() {
 			}
 
 			op <- struct{}{}
+		case <-ctx.Done():
+			zap.S().Info("shutdown controller")
+			ticker.Stop()
 		case d := <-c.done:
 			zap.S().Info("shutdown controller")
 			ticker.Stop()

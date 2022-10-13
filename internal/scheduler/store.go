@@ -20,6 +20,9 @@ func NewStore() *Store {
 }
 
 func (s *Store) Len() int {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	return len(s.jobs)
 }
 
@@ -41,6 +44,9 @@ func (s *Store) Find(id string) (*entity.Job, bool) {
 }
 
 func (s *Store) Delete(element *entity.Job) *entity.Job {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	var none *entity.Job
 	idx, err := s.index(element.ID())
 	if err != nil {
@@ -53,21 +59,17 @@ func (s *Store) Delete(element *entity.Job) *entity.Job {
 }
 
 func (s *Store) Add(t *entity.Job) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	s.jobs = append(s.jobs, t)
 }
 
 func (s *Store) ToList() []*entity.Job {
-	return s.jobs[:]
-}
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-func (s *Store) Clone() *Store {
-	clone := &Store{
-		jobs: make([]*entity.Job, 0, len(s.jobs)),
-	}
-	for _, j := range s.jobs {
-		clone.jobs = append(clone.jobs, j.Clone())
-	}
-	return clone
+	return s.jobs[:]
 }
 
 func (s *Store) index(id string) (int, error) {
