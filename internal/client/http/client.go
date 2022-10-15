@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/certificate"
@@ -41,6 +42,8 @@ type Client struct {
 
 	// transport is the transport which make the actual request
 	transport http.RoundTripper
+
+	lock sync.Mutex
 }
 
 func New(path string, certManager *certificate.Manager) (*Client, error) {
@@ -186,6 +189,9 @@ func (c *Client) do(request *http.Request) (*http.Response, error) {
 // getClient returns a real http.Client created with our transport.
 // It checks if certifcates signatures changed and if true it recreates a new transport.
 func (c *Client) getClient() (*http.Client, error) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	if !bytes.Equal(c.certificateSignature, c.certMananger.Signature()) {
 		zap.S().Info("Certificates have changed. Recreate transport")
 		t, err := c.createTransport()

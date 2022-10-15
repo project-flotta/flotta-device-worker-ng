@@ -124,12 +124,9 @@ clean: ## Clean project
 
 ##@ Build
 
-build.debug: ## Build with race conditions and lock checker
-build.debug: BUILD_OPTIONS=--race
-build.debug: CGO_ENABLED=1
-build.debug: build
-
 build: ## Build device worker
+build: CGO_ENABLED=1
+build: BUILD_OPTIONS=--race -ldflags="-X github.com/tupyy/device-worker-ng/configuration.CommitID=${GIT_COMMIT}"
 build:
 	mkdir -p ./bin
 	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_OPTIONS) -o ./bin/device-worker ./main.go

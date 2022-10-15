@@ -40,15 +40,14 @@ const (
 var rootCmd = &cobra.Command{
 	Use:   "device-worker-ng",
 	Short: "Device worker",
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		return config.InitConfiguration(cmd, configFile)
-	},
 	Run: func(cmd *cobra.Command, args []string) {
 		logger := setupLogger()
 		defer logger.Sync()
 
 		undo := zap.ReplaceGlobals(logger)
 		defer undo()
+
+		config.InitConfiguration(cmd, configFile)
 
 		certManager, err := initCertificateManager(caRoot, certFile, privateKey)
 		if err != nil {
@@ -70,11 +69,16 @@ var rootCmd = &cobra.Command{
 		controller := edge.New(httpClient, confManager, certManager)
 		profileManager := profile.New(confManager.StateManagerCh)
 		resourceManager := resources.New()
+		// setup scheduler
 		scheduler := scheduler.New(executor, resourceManager)
+		//	confManager.SetWorkloadStatusReader(scheduler)
 
+		// this should be the last step, in order to avoid data races.
+		// starting in right order the controller, scheduler and profile manager
 		ctx, cancel := context.WithCancel(context.Background())
+		controller.Start(ctx)
 		scheduler.Start(ctx, confManager.SchedulerCh, profileManager.OutputCh)
-		confManager.SetWorkloadStatusReader(scheduler)
+		profileManager.Start(ctx)
 
 		done := make(chan os.Signal, 1)
 		signal.Notify(done, os.Interrupt, os.Kill)
@@ -84,7 +88,6 @@ var rootCmd = &cobra.Command{
 		cancel()
 		controller.Shutdown(ctx)
 		profileManager.Shutdown(ctx)
-
 	},
 }
 

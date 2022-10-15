@@ -2,6 +2,8 @@ package entity
 
 import (
 	"encoding/json"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -70,10 +72,10 @@ type Job struct {
 	// workload
 	workload Workload
 	// currentState holds the current state of the job
-	currentState JobState
+	currentState atomic.Value
 	// targetState holds the desired next state of the job
 	// targetState is mutated by the scheduler when it wants to run/stop the workload
-	targetState JobState
+	targetState atomic.Value
 	// markedForDeletion is true if the job has to be deleted
 	markedForDeletion bool
 	cron              *CronJob
@@ -83,6 +85,7 @@ type Job struct {
 	currentResources CpuResource
 	// target resources
 	targetResources CpuResource
+	lock            sync.Mutex
 }
 
 func (j *Job) SetTargetState(state JobState) error {
@@ -94,20 +97,25 @@ func (j *Job) SetTargetState(state JobState) error {
 		}
 	}
 	runHooksFn(PreSetTargetState)
-	j.targetState = state
+	j.targetState.Store(state)
 	runHooksFn(PostSetTargetState)
 	return nil
 }
 
 func (j *Job) TargetState() JobState {
-	return j.targetState
+	state := j.targetState.Load().(JobState)
+	return state
 }
 
 func (j *Job) CurrentState() JobState {
-	return j.currentState
+	state := j.currentState.Load().(JobState)
+	return state
 }
 
 func (j *Job) SetCurrentState(state JobState) {
+	j.lock.Lock()
+	defer j.lock.Unlock()
+
 	runHooksFn := func(hookType HookType) {
 		for _, hook := range j.hooks {
 			if hook.Name == hookType {
@@ -119,7 +127,7 @@ func (j *Job) SetCurrentState(state JobState) {
 	runHooksFn(PreSetCurrentState)
 
 	// if we allow to set the unknow state when the job is ready the restart will be activated
-	if state == UnknownState && (j.currentState == ReadyState || j.currentState == InactiveState) {
+	if state == UnknownState && (j.CurrentState() == ReadyState || j.CurrentState() == InactiveState) {
 		return
 	}
 
@@ -129,11 +137,11 @@ func (j *Job) SetCurrentState(state JobState) {
 	// because the job was removed from podman/k8s therefore if we allow the current state to be unknown when the restart will happen, the reply backoff will be looked at
 	// which is wrong. We should be able to restart the job without hitting the backoff function.
 	if state.OneOf(UnknownState, ExitedState) && j.TargetState() == InactiveState {
-		j.currentState = InactiveState
+		j.currentState.Store(InactiveState)
 		return
 	}
 
-	j.currentState = state
+	j.currentState.Store(state)
 
 	runHooksFn(PostSetCurrentState)
 }
@@ -205,35 +213,6 @@ func (j *Job) TargetResources() CpuResource {
 	return j.targetResources
 }
 
-func (j *Job) Clone() *Job {
-	clone := &Job{
-		workload:          j.workload,
-		currentState:      j.currentState,
-		targetState:       j.targetState,
-		markedForDeletion: j.markedForDeletion,
-		hooks:             j.hooks[:],
-		currentResources:  j.currentResources,
-		targetResources:   j.targetResources,
-	}
-
-	if j.cron != nil {
-		clone.cron = &CronJob{
-			next:     time.UnixMicro(j.cron.next.UnixMicro()),
-			schedule: j.cron.schedule,
-		}
-	}
-
-	if j.retry != nil {
-		clone.retry = &RetryJob{
-			next:             time.UnixMicro(j.retry.next.UnixMicro()),
-			MarkedForRestart: j.retry.MarkedForRestart,
-			b:                j.retry.b,
-		}
-	}
-
-	return clone
-}
-
 type Builder struct {
 	w            Workload
 	cronSpec     string
@@ -274,10 +253,13 @@ func (jb *Builder) AddHook(hookType HookType, fn JobStateHook) *Builder {
 }
 
 func (jb *Builder) Build() (*Job, error) {
+	var readyState atomic.Value
+	readyState.Store(ReadyState)
+
 	j := &Job{
 		workload:     jb.w,
-		currentState: ReadyState,
-		targetState:  ReadyState,
+		currentState: readyState,
+		targetState:  readyState,
 		hooks:        make([]Pair[HookType, JobStateHook], 0),
 	}
 

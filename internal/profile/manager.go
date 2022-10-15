@@ -2,6 +2,7 @@ package profile
 
 import (
 	"context"
+	"sync"
 
 	"github.com/tupyy/device-worker-ng/internal/entity"
 	"go.uber.org/zap"
@@ -46,6 +47,7 @@ type Manager struct {
 	// metrics holds latest metric values received.
 	// metrics are used to evaluate profiles
 	metrics map[string]interface{}
+	runOnce sync.Once
 }
 
 // New returns a new state manager with the default evaluator
@@ -59,19 +61,20 @@ func NewWithEvaluator(recv chan entity.Message, e Evaluator) *Manager {
 }
 
 func _new(recv chan entity.Message, evaluator Evaluator) *Manager {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	m := &Manager{
 		OutputCh:          make(chan []ProfileEvaluationResult, 1),
 		recv:              recv,
-		cancelFunc:        cancel,
 		profilesEvaluator: evaluator,
 		metrics:           make(map[string]interface{}),
 	}
 
-	go m.run(ctx)
-
 	return m
+}
+
+func (m *Manager) Start(ctx context.Context) {
+	m.runOnce.Do(func() {
+		go m.run(ctx)
+	})
 }
 
 func (m *Manager) run(ctx context.Context) {

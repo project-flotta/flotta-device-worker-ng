@@ -310,7 +310,7 @@ func (s *Scheduler) run(ctx context.Context, input chan entity.Option[[]entity.W
 
 func (s *Scheduler) GetWorkloadsStatus() map[string]entity.JobState {
 	status := make(map[string]entity.JobState)
-	for _, j := range s.jobs.Clone().jobs {
+	for _, j := range s.jobs.ToList() {
 		var name string
 		switch j.Workload().Kind() {
 		case entity.PodKind:

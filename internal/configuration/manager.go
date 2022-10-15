@@ -1,7 +1,6 @@
 package configuration
 
 import (
-	"sync"
 	"time"
 
 	"github.com/tupyy/device-worker-ng/internal/configuration/interpreter"
@@ -36,7 +35,6 @@ type Manager struct {
 
 	conf         entity.DeviceConfigurationMessage
 	hardware     entity.HardwareInfo
-	lock         sync.Mutex
 	statusReader WorkloadStatusReader
 }
 
